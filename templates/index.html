@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packet Capture Web Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header h1 {
+            color: #4a5568;
+            margin-bottom: 10px;
+            font-size: 2.5rem;
+        }
+        
+        .controls {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        
+        select, button {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        select:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .status {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #f56565;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.active {
+            background: #48bb78;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .packets-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        
+        .packets-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            font-weight: 600;
+        }
+        
+        .packets-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .packet {
+            border-bottom: 1px solid #e2e8f0;
+            padding: 15px 20px;
+            transition: background-color 0.2s ease;
+        }
+        
+        .packet:hover {
+            background-color: #f7fafc;
+        }
+        
+        .packet:last-child {
+            border-bottom: none;
+        }
+        
+        .packet-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .packet-id {
+            font-weight: 600;
+            color: #667eea;
+            margin-right: 10px;
+        }
+        
+        .packet-time {
+            color: #718096;
+            font-size: 0.9em;
+            margin-left: auto;
+        }
+        
+        .packet-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        
+        .packet-detail {
+            font-size: 0.9em;
+            color: #4a5568;
+        }
+        
+        .packet-detail strong {
+            color: #2d3748;
+        }
+        
+        .protocol-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .protocol-tcp {
+            background: #bee3f8;
+            color: #2b6cb0;
+        }
+        
+        .protocol-udp {
+            background: #c6f6d5;
+            color: #276749;
+        }
+        
+        .protocol-icmp {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        
+        .protocol-other {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        
+        .payload {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8em;
+            color: #718096;
+            background: #f7fafc;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            word-break: break-all;
+        }
+        
+        .no-packets {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+        
+        @media (max-width: 768px) {
+            .button-group {
+                grid-template-columns: 1fr;
+            }
+            
+            .packet-info {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Packet Capture Web Interface</h1>
+            <p>Real-time network packet monitoring and analysis</p>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="interface-select">Select Network Interface:</label>
+                <select id="interface-select">
+                    <option value="">Loading interfaces...</option>
+                </select>
+            </div>
+            
+            <div class="button-group">
+                <button id="start-btn">Start Capture</button>
+                <button id="stop-btn" disabled>Stop Capture</button>
+            </div>
+        </div>
+        
+        <div class="status">
+            <div class="status-indicator">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Ready to capture</span>
+                <span id="packet-count" style="margin-left: auto;">Packets: 0</span>
+            </div>
+        </div>
+        
+        <div class="packets-container">
+            <div class="packets-header">
+                Captured Packets
+            </div>
+            <div class="packets-list" id="packets-list">
+                <div class="no-packets">
+                    No packets captured yet. Start capturing to see network traffic.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+        
+        // UI Elements
+        const interfaceSelect = document.getElementById('interface-select');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const packetCount = document.getElementById('packet-count');
+        const packetsList = document.getElementById('packets-list');
+        
+        let capturedPackets = 0;
+        let isCapturing = false;
+        
+        // Load network interfaces on page load
+        window.addEventListener('load', loadInterfaces);
+        
+        // Button event listeners
+        startBtn.addEventListener('click', startCapture);
+        stopBtn.addEventListener('click', stopCapture);
+        
+        // Socket event listeners
+        socket.on('connected', (data) => {
+            console.log('Connected to server:', data.message);
+        });
+        
+        socket.on('new_packet', (packet) => {
+            addPacketToUI(packet);
+            capturedPackets++;
+            packetCount.textContent = `Packets: ${capturedPackets}`;
+        });
+        
+        socket.on('capture_error', (data) => {
+            alert('Capture Error: ' + data.error);
+            stopCapture();
+        });
+        
+        async function loadInterfaces() {
+            try {
+                const response = await fetch('/interfaces');
+                const interfaces = await response.json();
+                
+                interfaceSelect.innerHTML = '<option value="">Select an interface...</option>';
+                
+                interfaces.forEach(iface => {
+                    const option = document.createElement('option');
+                    option.value = iface.ip;
+                    option.textContent = `${iface.name} (${iface.ip})`;
+                    interfaceSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load interfaces:', error);
+                interfaceSelect.innerHTML = '<option value="">Failed to load interfaces</option>';
+            }
+        }
+        
+        async function startCapture() {
+            const interfaceIp = interfaceSelect.value;
+            if (!interfaceIp) {
+                alert('Please select a network interface');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/start_capture', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ interface_ip: interfaceIp })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    isCapturing = true;
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    interfaceSelect.disabled = true;
+                    statusDot.classList.add('active');
+                    statusText.textContent = 'Capturing packets...';
+                    clearPacketsList();
+                    capturedPackets = 0;
+                } else {
+                    alert('Failed to start capture: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error starting capture: ' + error.message);
+            }
+        }
+        
+        async function stopCapture() {
+            try {
+                const response = await fetch('/stop_capture', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                isCapturing = false;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                interfaceSelect.disabled = false;
+                statusDot.classList.remove('active');
+                statusText.textContent = 'Capture stopped';
+            } catch (error) {
+                console.error('Error stopping capture:', error);
+            }
+        }
+        
+        function addPacketToUI(packet) {
+            // Remove "no packets" message
+            if (packetsList.querySelector('.no-packets')) {
+                packetsList.innerHTML = '';
+            }
+            
+            const packetElement = document.createElement('div');
+            packetElement.className = 'packet';
+            
+            const protocolClass = getProtocolClass(packet.protocol);
+            const portsInfo = packet.src_port ? `${packet.src_port} → ${packet.dst_port}` : '';
+            const flagsInfo = packet.flags ? ` [${packet.flags}]` : '';
+            
+            packetElement.innerHTML = `
+                <div class="packet-header">
+                    <span class="packet-id">#${packet.id}</span>
+                    <span class="protocol-badge ${protocolClass}">${packet.protocol}</span>
+                    <span class="packet-time">${packet.timestamp}</span>
+                </div>
+                <div class="packet-info">
+                    <div class="packet-detail">
+                        <strong>Source:</strong> ${packet.src_ip}${packet.src_port ? ':' + packet.src_port : ''}
+                    </div>
+                    <div class="packet-detail">
+                        <strong>Destination:</strong> ${packet.dst_ip}${packet.dst_port ? ':' + packet.dst_port : ''}
+                    </div>
+                    <div class="packet-detail">
+                        <strong>Size:</strong> ${packet.size} bytes
+                    </div>
+                    <div class="packet-detail">
+                        <strong>Info:</strong> ${portsInfo}${flagsInfo}
+                    </div>
+                </div>
+                ${packet.payload ? `<div class="payload">Payload: ${packet.payload}</div>` : ''}
+            `;
+            
+            // Add to top of list
+            packetsList.insertBefore(packetElement, packetsList.firstChild);
+            
+            // Limit displayed packets to prevent performance issues
+            while (packetsList.children.length > 100) {
+                packetsList.removeChild(packetsList.lastChild);
+            }
+        }
+        
+        function getProtocolClass(protocol) {
+            switch (protocol.toLowerCase()) {
+                case 'tcp': return 'protocol-tcp';
+                case 'udp': return 'protocol-udp';
+                case 'icmp': return 'protocol-icmp';
+                default: return 'protocol-other';
+            }
+        }
+        
+        function clearPacketsList() {
+            packetsList.innerHTML = '<div class="no-packets">Starting capture...</div>';
+        }
+    </script>
+</body>
+</html>
