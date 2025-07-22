@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Web-based Packet Capture Application
-A Flask web interface for capturing and viewing network packets
+Intrusion Detection System with Packet Capture
+Web interface with rule-based threat detection and alerting
 """
 
 from flask import Flask, render_template, request, jsonify
@@ -13,33 +13,196 @@ import sys
 import psutil
 from datetime import datetime
 import json
+import re
+import time
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'packet_capture_secret'
+app.config['SECRET_KEY'] = 'packet_capture_ids_secret'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Global variables
 capture_thread = None
 is_capturing = False
 captured_packets = []
-max_packets = 1000  # Limit stored packets to prevent memory issues
+alerts = []
+max_packets = 1000
+max_alerts = 100
+
+class IDSRule:
+    """Base class for IDS rules"""
+    def __init__(self, name, description, severity="Medium"):
+        self.name = name
+        self.description = description
+        self.severity = severity
+        self.enabled = True
+        self.trigger_count = 0
+    
+    def check(self, packet_info, raw_data=None):
+        """Override this method in rule implementations"""
+        return False
+    
+    def get_alert_message(self, packet_info):
+        """Get alert message for this rule"""
+        return f"{self.name}: {self.description}"
+
+class GoogleVisitRule(IDSRule):
+    """Rule to detect visits to google.co.in"""
+    def __init__(self):
+        super().__init__(
+            name="Google India Visit Detected",
+            description="User accessed google.co.in domain",
+            severity="Low"
+        )
+    
+    def check(self, packet_info, raw_data=None):
+        # Check if this is HTTP traffic (port 80 or 443)
+        if packet_info.get('dst_port') in [80, 443] or packet_info.get('src_port') in [80, 443]:
+            # Try to extract domain from payload (simplified)
+            if raw_data and packet_info.get('protocol') == 'TCP':
+                try:
+                    payload = raw_data[40:].decode('utf-8', errors='ignore')  # Skip IP+TCP headers
+                    if 'google.co.in' in payload.lower():
+                        return True
+                    # Also check for Host header
+                    if 'host: google.co.in' in payload.lower():
+                        return True
+                except:
+                    pass
+        
+        # Check destination IP (Google's IP ranges - simplified check)
+        dst_ip = packet_info.get('dst_ip', '')
+        google_ip_prefixes = ['142.250.', '172.217.', '216.58.', '74.125.']
+        if any(dst_ip.startswith(prefix) for prefix in google_ip_prefixes):
+            return True
+        
+        return False
+
+class SuspiciousPortScanRule(IDSRule):
+    """Rule to detect potential port scanning"""
+    def __init__(self):
+        super().__init__(
+            name="Potential Port Scan Detected",
+            description="Multiple connection attempts to different ports from same source",
+            severity="High"
+        )
+        self.port_attempts = {}  # Track connection attempts
+        self.time_window = 60  # 60 seconds
+        self.threshold = 10  # 10 different ports in time window
+    
+    def check(self, packet_info, raw_data=None):
+        if packet_info.get('protocol') != 'TCP':
+            return False
+        
+        src_ip = packet_info.get('src_ip')
+        dst_port = packet_info.get('dst_port')
+        current_time = time.time()
+        
+        if src_ip and dst_port:
+            if src_ip not in self.port_attempts:
+                self.port_attempts[src_ip] = []
+            
+            # Add current attempt
+            self.port_attempts[src_ip].append({
+                'port': dst_port,
+                'time': current_time
+            })
+            
+            # Clean old entries
+            self.port_attempts[src_ip] = [
+                attempt for attempt in self.port_attempts[src_ip]
+                if current_time - attempt['time'] <= self.time_window
+            ]
+            
+            # Check for threshold
+            unique_ports = set(attempt['port'] for attempt in self.port_attempts[src_ip])
+            if len(unique_ports) >= self.threshold:
+                return True
+        
+        return False
+
+class LargePacketRule(IDSRule):
+    """Rule to detect unusually large packets"""
+    def __init__(self):
+        super().__init__(
+            name="Large Packet Detected",
+            description="Packet size exceeds normal threshold",
+            severity="Medium"
+        )
+        self.size_threshold = 1500  # bytes
+    
+    def check(self, packet_info, raw_data=None):
+        return packet_info.get('size', 0) > self.size_threshold
+
+class IDSEngine:
+    """Intrusion Detection System Engine"""
+    def __init__(self):
+        self.rules = [
+            GoogleVisitRule(),
+            SuspiciousPortScanRule(),
+            LargePacketRule()
+        ]
+        self.total_alerts = 0
+    
+    def add_rule(self, rule):
+        """Add a new rule to the IDS"""
+        self.rules.append(rule)
+    
+    def analyze_packet(self, packet_info, raw_data=None):
+        """Analyze packet against all rules"""
+        triggered_alerts = []
+        
+        for rule in self.rules:
+            if rule.enabled and rule.check(packet_info, raw_data):
+                rule.trigger_count += 1
+                alert = {
+                    'id': self.total_alerts + len(triggered_alerts) + 1,
+                    'timestamp': datetime.now().strftime("%H:%M:%S.%f")[:-3],
+                    'rule_name': rule.name,
+                    'description': rule.description,
+                    'severity': rule.severity,
+                    'src_ip': packet_info.get('src_ip'),
+                    'dst_ip': packet_info.get('dst_ip'),
+                    'src_port': packet_info.get('src_port'),
+                    'dst_port': packet_info.get('dst_port'),
+                    'protocol': packet_info.get('protocol'),
+                    'packet_size': packet_info.get('size'),
+                    'packet_id': packet_info.get('id')
+                }
+                triggered_alerts.append(alert)
+        
+        self.total_alerts += len(triggered_alerts)
+        return triggered_alerts
+    
+    def get_rules_status(self):
+        """Get status of all rules"""
+        return [{
+            'name': rule.name,
+            'description': rule.description,
+            'severity': rule.severity,
+            'enabled': rule.enabled,
+            'trigger_count': rule.trigger_count
+        } for rule in self.rules]
 
 class PacketCapture:
     def __init__(self):
         self.conn = None
         self.is_running = False
+        self.ids_engine = IDSEngine()
         
     def get_network_interfaces(self):
         """Get list of available network interfaces"""
         interfaces = []
-        for interface_name, addresses in psutil.net_if_addrs().items():
-            for addr in addresses:
-                if addr.family == socket.AF_INET:  # IPv4
-                    interfaces.append({
-                        'name': interface_name,
-                        'ip': addr.address,
-                        'netmask': addr.netmask
-                    })
+        try:
+            for interface_name, addresses in psutil.net_if_addrs().items():
+                for addr in addresses:
+                    if addr.family == socket.AF_INET:
+                        interfaces.append({
+                            'name': interface_name,
+                            'ip': addr.address,
+                            'netmask': addr.netmask
+                        })
+        except Exception as e:
+            print(f"Error getting interfaces: {e}")
         return interfaces
     
     def start_capture(self, interface_ip):
@@ -70,8 +233,8 @@ class PacketCapture:
             self.conn = None
     
     def capture_packets(self):
-        """Capture packets and emit to web interface"""
-        global captured_packets, is_capturing
+        """Capture packets and analyze with IDS"""
+        global captured_packets, is_capturing, alerts
         packet_count = 0
         
         while self.is_running:
@@ -82,16 +245,28 @@ class PacketCapture:
                 # Parse packet
                 packet_info = self.parse_packet(raw_data, packet_count)
                 
-                # Store packet (limit storage)
+                # IDS Analysis
+                packet_alerts = self.ids_engine.analyze_packet(packet_info, raw_data)
+                
+                # Store alerts
+                for alert in packet_alerts:
+                    alerts.append(alert)
+                    if len(alerts) > max_alerts:
+                        alerts.pop(0)
+                    
+                    # Emit alert to web interface
+                    socketio.emit('new_alert', alert)
+                
+                # Store packet
                 captured_packets.append(packet_info)
                 if len(captured_packets) > max_packets:
                     captured_packets.pop(0)
                 
-                # Emit to web interface
+                # Emit packet to web interface
                 socketio.emit('new_packet', packet_info)
                 
             except Exception as e:
-                if self.is_running:  # Only emit error if we're supposed to be running
+                if self.is_running:
                     socketio.emit('capture_error', {'error': str(e)})
                 break
     
@@ -191,7 +366,7 @@ class PacketCapture:
         }
         return protocols.get(protocol_num, f'Unknown({protocol_num})')
 
-# Initialize packet capture
+# Initialize packet capture with IDS
 packet_capture = PacketCapture()
 
 @app.route('/')
@@ -208,7 +383,7 @@ def get_interfaces():
 @app.route('/start_capture', methods=['POST'])
 def start_capture():
     """Start packet capture"""
-    global capture_thread, is_capturing, captured_packets
+    global capture_thread, is_capturing, captured_packets, alerts
     
     data = request.get_json()
     interface_ip = data.get('interface_ip')
@@ -216,8 +391,9 @@ def start_capture():
     if is_capturing:
         return jsonify({'success': False, 'message': 'Capture already running'})
     
-    # Clear previous packets
+    # Clear previous data
     captured_packets = []
+    alerts = []
     
     # Start capture
     result = packet_capture.start_capture(interface_ip)
@@ -226,7 +402,7 @@ def start_capture():
         capture_thread = threading.Thread(target=packet_capture.capture_packets)
         capture_thread.daemon = True
         capture_thread.start()
-        return jsonify({'success': True, 'message': 'Capture started'})
+        return jsonify({'success': True, 'message': 'Capture started with IDS monitoring'})
     else:
         return jsonify({'success': False, 'message': f'Failed to start capture: {result[1]}'})
 
@@ -247,13 +423,25 @@ def get_packets():
     """Get captured packets"""
     return jsonify(captured_packets)
 
+@app.route('/alerts')
+def get_alerts():
+    """Get IDS alerts"""
+    return jsonify(alerts)
+
+@app.route('/rules')
+def get_rules():
+    """Get IDS rules status"""
+    return jsonify(packet_capture.ids_engine.get_rules_status())
+
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
-    emit('connected', {'message': 'Connected to packet capture server'})
-    # Send existing packets to new client
-    for packet in captured_packets[-50:]:  # Send last 50 packets
+    emit('connected', {'message': 'Connected to IDS packet capture server'})
+    # Send existing data to new client
+    for packet in captured_packets[-20:]:
         emit('new_packet', packet)
+    for alert in alerts[-10:]:
+        emit('new_alert', alert)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -261,7 +449,17 @@ def handle_disconnect():
     pass
 
 if __name__ == '__main__':
-    print("Starting Packet Capture Web Interface...")
-    print("Access the interface at: http://localhost:5000")
-    print("Remember to run as Administrator on Windows!")
+    print("=" * 60)
+    print("INTRUSION DETECTION SYSTEM - PACKET CAPTURE")
+    print("=" * 60)
+    print("Features:")
+    print("• Real-time packet capture")
+    print("• Rule-based threat detection")
+    print("• Alert notifications")
+    print("• Web-based monitoring interface")
+    print("=" * 60)
+    print("Access at: http://localhost:5000")
+    print("Remember to run as Administrator!")
+    print("=" * 60)
+    
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)

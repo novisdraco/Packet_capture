@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Packet Capture Web Interface</title>
+    <title>IDS - Packet Capture & Threat Detection</title>
     <style>
         * {
             margin: 0;
@@ -19,7 +19,7 @@
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
         }
@@ -35,8 +35,51 @@
         
         .header h1 {
             color: #4a5568;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             font-size: 2.5rem;
+        }
+        
+        .header .subtitle {
+            color: #718096;
+            font-size: 1.1rem;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #667eea;
+            display: block;
+        }
+        
+        .stat-label {
+            color: #718096;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        
+        .alert-stat {
+            color: #e53e3e !important;
         }
         
         .controls {
@@ -135,7 +178,13 @@
             50% { opacity: 0.5; }
         }
         
-        .packets-container {
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .alerts-container, .packets-container {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             border-radius: 15px;
@@ -143,35 +192,102 @@
             overflow: hidden;
         }
         
-        .packets-header {
+        .alerts-header, .packets-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 15px 20px;
             font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
-        .packets-list {
-            max-height: 500px;
+        .alerts-header {
+            background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
+        }
+        
+        .alerts-list, .packets-list {
+            max-height: 400px;
             overflow-y: auto;
         }
         
-        .packet {
+        .alert, .packet {
             border-bottom: 1px solid #e2e8f0;
             padding: 15px 20px;
             transition: background-color 0.2s ease;
         }
         
-        .packet:hover {
+        .alert {
+            border-left: 4px solid #e53e3e;
+            background: linear-gradient(90deg, rgba(229, 62, 62, 0.05) 0%, transparent 100%);
+        }
+        
+        .alert:hover, .packet:hover {
             background-color: #f7fafc;
         }
         
-        .packet:last-child {
+        .alert:last-child, .packet:last-child {
             border-bottom: none;
+        }
+        
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .alert-title {
+            font-weight: 600;
+            color: #e53e3e;
+            font-size: 1.1rem;
+        }
+        
+        .severity-badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .severity-low {
+            background: #c6f6d5;
+            color: #276749;
+        }
+        
+        .severity-medium {
+            background: #fbb344;
+            color: #744210;
+        }
+        
+        .severity-high {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        
+        .alert-time {
+            color: #718096;
+            font-size: 0.9em;
+        }
+        
+        .alert-details {
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+        
+        .alert-network {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            color: #718096;
+            background: #f7fafc;
+            padding: 8px;
+            border-radius: 4px;
         }
         
         .packet-header {
             display: flex;
-            justify-content: between;
+            justify-content: space-between;
             align-items: center;
             margin-bottom: 8px;
         }
@@ -185,7 +301,6 @@
         .packet-time {
             color: #718096;
             font-size: 0.9em;
-            margin-left: auto;
         }
         
         .packet-info {
@@ -244,13 +359,55 @@
             word-break: break-all;
         }
         
-        .no-packets {
+        .no-items {
             text-align: center;
             padding: 40px;
             color: #718096;
         }
         
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #e53e3e;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(229, 62, 62, 0.3);
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .debug-info {
+            background: #f0f8ff;
+            border: 1px solid #cce7ff;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            color: #2c5aa0;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .dashboard {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
         @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
             .button-group {
                 grid-template-columns: 1fr;
             }
@@ -268,11 +425,35 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🌐 Packet Capture Web Interface</h1>
-            <p>Real-time network packet monitoring and analysis</p>
+            <h1>🛡️ Intrusion Detection System</h1>
+            <p class="subtitle">Real-time packet capture with threat detection and alerting</p>
+        </div>
+        
+        <div class="dashboard">
+            <div class="stat-card">
+                <span class="stat-number" id="packet-count">0</span>
+                <div class="stat-label">Packets Captured</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number alert-stat" id="alert-count">0</span>
+                <div class="stat-label">Security Alerts</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="rules-count">0</span>
+                <div class="stat-label">Active Rules</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="threat-level">LOW</span>
+                <div class="stat-label">Threat Level</div>
+            </div>
         </div>
         
         <div class="controls">
+            <!-- Debug info -->
+            <div class="debug-info" id="debug-info" style="display: none;">
+                <strong>Debug:</strong> <span id="debug-message">Loading...</span>
+            </div>
+            
             <div class="control-group">
                 <label for="interface-select">Select Network Interface:</label>
                 <select id="interface-select">
@@ -281,33 +462,55 @@
             </div>
             
             <div class="button-group">
-                <button id="start-btn">Start Capture</button>
-                <button id="stop-btn" disabled>Stop Capture</button>
+                <button id="start-btn">Start IDS Monitoring</button>
+                <button id="stop-btn" disabled>Stop Monitoring</button>
             </div>
         </div>
         
         <div class="status">
             <div class="status-indicator">
                 <div class="status-dot" id="status-dot"></div>
-                <span id="status-text">Ready to capture</span>
-                <span id="packet-count" style="margin-left: auto;">Packets: 0</span>
+                <span id="status-text">Ready to start monitoring</span>
+                <span id="session-time" style="margin-left: auto;">Session: 00:00:00</span>
             </div>
         </div>
         
-        <div class="packets-container">
-            <div class="packets-header">
-                Captured Packets
+        <div class="main-content">
+            <div class="alerts-container">
+                <div class="alerts-header">
+                    🚨 Security Alerts
+                    <span id="new-alerts-badge" style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 10px; font-size: 0.8em; display: none;">NEW</span>
+                </div>
+                <div class="alerts-list" id="alerts-list">
+                    <div class="no-items">
+                        No security alerts yet. IDS monitoring will detect threats in real-time.
+                    </div>
+                </div>
             </div>
-            <div class="packets-list" id="packets-list">
-                <div class="no-packets">
-                    No packets captured yet. Start capturing to see network traffic.
+            
+            <div class="packets-container">
+                <div class="packets-header">
+                    📊 Network Traffic
+                </div>
+                <div class="packets-list" id="packets-list">
+                    <div class="no-items">
+                        No packets captured yet. Start monitoring to see network traffic.
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Notification for alerts -->
+    <div class="notification" id="alert-notification">
+        <strong>🚨 Security Alert!</strong>
+        <div id="notification-message">New threat detected</div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
+        console.log('🚀 Starting IDS Web Interface...');
+        
         // Initialize Socket.IO
         const socket = io();
         
@@ -318,13 +521,43 @@
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
         const packetCount = document.getElementById('packet-count');
+        const alertCount = document.getElementById('alert-count');
+        const rulesCount = document.getElementById('rules-count');
+        const threatLevel = document.getElementById('threat-level');
+        const sessionTime = document.getElementById('session-time');
         const packetsList = document.getElementById('packets-list');
+        const alertsList = document.getElementById('alerts-list');
+        const alertNotification = document.getElementById('alert-notification');
+        const notificationMessage = document.getElementById('notification-message');
+        const newAlertsBadge = document.getElementById('new-alerts-badge');
+        const debugInfo = document.getElementById('debug-info');
+        const debugMessage = document.getElementById('debug-message');
         
         let capturedPackets = 0;
+        let alertsReceived = 0;
         let isCapturing = false;
+        let sessionStartTime = null;
+        let sessionTimer = null;
+        
+        // Show debug info
+        function showDebug(message) {
+            console.log('DEBUG:', message);
+            debugMessage.textContent = message;
+            debugInfo.style.display = 'block';
+        }
+        
+        // Hide debug info
+        function hideDebug() {
+            debugInfo.style.display = 'none';
+        }
         
         // Load network interfaces on page load
-        window.addEventListener('load', loadInterfaces);
+        window.addEventListener('load', () => {
+            console.log('🌐 Page loaded, initializing...');
+            showDebug('Loading network interfaces...');
+            loadInterfaces();
+            loadRulesCount();
+        });
         
         // Button event listeners
         startBtn.addEventListener('click', startCapture);
@@ -332,36 +565,103 @@
         
         // Socket event listeners
         socket.on('connected', (data) => {
-            console.log('Connected to server:', data.message);
+            console.log('✅ Connected to IDS server:', data.message);
+            showDebug('Connected to server successfully');
+            setTimeout(hideDebug, 3000);
         });
         
         socket.on('new_packet', (packet) => {
             addPacketToUI(packet);
             capturedPackets++;
-            packetCount.textContent = `Packets: ${capturedPackets}`;
+            packetCount.textContent = capturedPackets;
+        });
+        
+        socket.on('new_alert', (alert) => {
+            console.log('🚨 New alert received:', alert);
+            addAlertToUI(alert);
+            alertsReceived++;
+            alertCount.textContent = alertsReceived;
+            
+            // Update threat level based on alert severity
+            updateThreatLevel(alert.severity);
+            
+            // Show notification
+            showAlertNotification(alert);
+            
+            // Play beep sound
+            createBeepSound();
         });
         
         socket.on('capture_error', (data) => {
+            console.error('❌ Capture error:', data.error);
             alert('Capture Error: ' + data.error);
             stopCapture();
         });
         
         async function loadInterfaces() {
+            console.log('📡 Loading network interfaces...');
+            
             try {
-                const response = await fetch('/interfaces');
-                const interfaces = await response.json();
+                showDebug('Fetching interfaces from server...');
                 
+                const response = await fetch('/interfaces');
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const interfaces = await response.json();
+                console.log('📋 Received interfaces:', interfaces);
+                
+                if (!Array.isArray(interfaces)) {
+                    throw new Error('Invalid response format - not an array');
+                }
+                
+                if (interfaces.length === 0) {
+                    throw new Error('No network interfaces found');
+                }
+                
+                // Clear and populate dropdown
                 interfaceSelect.innerHTML = '<option value="">Select an interface...</option>';
                 
-                interfaces.forEach(iface => {
+                interfaces.forEach((iface, index) => {
+                    console.log(`Adding interface ${index + 1}:`, iface);
                     const option = document.createElement('option');
                     option.value = iface.ip;
                     option.textContent = `${iface.name} (${iface.ip})`;
                     interfaceSelect.appendChild(option);
                 });
+                
+                showDebug(`✅ Loaded ${interfaces.length} network interfaces successfully`);
+                console.log('✅ Interface loading completed successfully');
+                
+                // Hide debug after success
+                setTimeout(hideDebug, 3000);
+                
             } catch (error) {
-                console.error('Failed to load interfaces:', error);
-                interfaceSelect.innerHTML = '<option value="">Failed to load interfaces</option>';
+                console.error('❌ Failed to load interfaces:', error);
+                showDebug(`❌ Error: ${error.message}`);
+                
+                interfaceSelect.innerHTML = `<option value="">Failed to load: ${error.message}</option>`;
+                
+                // Try again in 5 seconds
+                setTimeout(() => {
+                    showDebug('Retrying interface loading...');
+                    loadInterfaces();
+                }, 5000);
+            }
+        }
+        
+        async function loadRulesCount() {
+            try {
+                const response = await fetch('/rules');
+                const rules = await response.json();
+                rulesCount.textContent = rules.filter(rule => rule.enabled).length;
+                console.log('📏 Loaded rules count:', rules.length);
+            } catch (error) {
+                console.error('Failed to load rules:', error);
+                rulesCount.textContent = '?';
             }
         }
         
@@ -371,6 +671,8 @@
                 alert('Please select a network interface');
                 return;
             }
+            
+            console.log('🚀 Starting capture on:', interfaceIp);
             
             try {
                 const response = await fetch('/start_capture', {
@@ -384,23 +686,39 @@
                 const data = await response.json();
                 
                 if (data.success) {
+                    console.log('✅ Capture started successfully');
                     isCapturing = true;
                     startBtn.disabled = true;
                     stopBtn.disabled = false;
                     interfaceSelect.disabled = true;
                     statusDot.classList.add('active');
-                    statusText.textContent = 'Capturing packets...';
+                    statusText.textContent = 'IDS monitoring active...';
+                    
+                    // Start session timer
+                    sessionStartTime = new Date();
+                    sessionTimer = setInterval(updateSessionTime, 1000);
+                    
                     clearPacketsList();
+                    clearAlertsList();
                     capturedPackets = 0;
+                    alertsReceived = 0;
+                    packetCount.textContent = '0';
+                    alertCount.textContent = '0';
+                    threatLevel.textContent = 'LOW';
+                    threatLevel.className = 'stat-number';
                 } else {
+                    console.error('❌ Failed to start capture:', data.message);
                     alert('Failed to start capture: ' + data.message);
                 }
             } catch (error) {
+                console.error('❌ Error starting capture:', error);
                 alert('Error starting capture: ' + error.message);
             }
         }
         
         async function stopCapture() {
+            console.log('⏹️ Stopping capture...');
+            
             try {
                 const response = await fetch('/stop_capture', {
                     method: 'POST'
@@ -413,15 +731,75 @@
                 stopBtn.disabled = true;
                 interfaceSelect.disabled = false;
                 statusDot.classList.remove('active');
-                statusText.textContent = 'Capture stopped';
+                statusText.textContent = 'IDS monitoring stopped';
+                
+                // Stop session timer
+                if (sessionTimer) {
+                    clearInterval(sessionTimer);
+                    sessionTimer = null;
+                }
+                
+                console.log('✅ Capture stopped successfully');
             } catch (error) {
-                console.error('Error stopping capture:', error);
+                console.error('❌ Error stopping capture:', error);
             }
         }
         
+        function updateSessionTime() {
+            if (!sessionStartTime) return;
+            
+            const now = new Date();
+            const diff = Math.floor((now - sessionStartTime) / 1000);
+            const hours = Math.floor(diff / 3600).toString().padStart(2, '0');
+            const minutes = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+            const seconds = (diff % 60).toString().padStart(2, '0');
+            
+            sessionTime.textContent = `Session: ${hours}:${minutes}:${seconds}`;
+        }
+        
+        function addAlertToUI(alert) {
+            // Remove "no items" message
+            if (alertsList.querySelector('.no-items')) {
+                alertsList.innerHTML = '';
+            }
+            
+            const alertElement = document.createElement('div');
+            alertElement.className = 'alert';
+            
+            const severityClass = `severity-${alert.severity.toLowerCase()}`;
+            
+            alertElement.innerHTML = `
+                <div class="alert-header">
+                    <div class="alert-title">${alert.rule_name}</div>
+                    <div class="severity-badge ${severityClass}">${alert.severity}</div>
+                </div>
+                <div class="alert-time">${alert.timestamp}</div>
+                <div class="alert-details">${alert.description}</div>
+                <div class="alert-network">
+                    ${alert.src_ip}${alert.src_port ? ':' + alert.src_port : ''} → 
+                    ${alert.dst_ip}${alert.dst_port ? ':' + alert.dst_port : ''} 
+                    [${alert.protocol}] Packet #${alert.packet_id}
+                </div>
+            `;
+            
+            // Add to top of list
+            alertsList.insertBefore(alertElement, alertsList.firstChild);
+            
+            // Limit displayed alerts
+            while (alertsList.children.length > 50) {
+                alertsList.removeChild(alertsList.lastChild);
+            }
+            
+            // Show new alerts badge
+            newAlertsBadge.style.display = 'inline';
+            setTimeout(() => {
+                newAlertsBadge.style.display = 'none';
+            }, 3000);
+        }
+        
         function addPacketToUI(packet) {
-            // Remove "no packets" message
-            if (packetsList.querySelector('.no-packets')) {
+            // Remove "no items" message
+            if (packetsList.querySelector('.no-items')) {
                 packetsList.innerHTML = '';
             }
             
@@ -458,10 +836,35 @@
             // Add to top of list
             packetsList.insertBefore(packetElement, packetsList.firstChild);
             
-            // Limit displayed packets to prevent performance issues
-            while (packetsList.children.length > 100) {
+            // Limit displayed packets
+            while (packetsList.children.length > 50) {
                 packetsList.removeChild(packetsList.lastChild);
             }
+        }
+        
+        function updateThreatLevel(severity) {
+            let level = 'LOW';
+            let className = 'stat-number';
+            
+            if (alertsReceived >= 10) {
+                level = 'HIGH';
+                className = 'stat-number alert-stat';
+            } else if (alertsReceived >= 5 || severity === 'High') {
+                level = 'MEDIUM';
+                className = 'stat-number';
+            }
+            
+            threatLevel.textContent = level;
+            threatLevel.className = className;
+        }
+        
+        function showAlertNotification(alert) {
+            notificationMessage.textContent = `${alert.rule_name}: ${alert.src_ip} → ${alert.dst_ip}`;
+            alertNotification.classList.add('show');
+            
+            setTimeout(() => {
+                alertNotification.classList.remove('show');
+            }, 5000);
         }
         
         function getProtocolClass(protocol) {
@@ -474,8 +877,76 @@
         }
         
         function clearPacketsList() {
-            packetsList.innerHTML = '<div class="no-packets">Starting capture...</div>';
+            packetsList.innerHTML = '<div class="no-items">Starting capture...</div>';
         }
+        
+        function clearAlertsList() {
+            alertsList.innerHTML = '<div class="no-items">IDS monitoring for threats...</div>';
+        }
+        
+        // Create a simple beep sound programmatically
+        function createBeepSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+            } catch (error) {
+                console.log('Audio not available:', error);
+            }
+        }
+        
+        // Test interface loading on page ready
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🎯 DOM fully loaded, testing interface loading...');
+            
+            // Add a manual refresh button for testing
+            const refreshBtn = document.createElement('button');
+            refreshBtn.textContent = '🔄 Refresh Interfaces';
+            refreshBtn.style.marginTop = '10px';
+            refreshBtn.style.width = 'auto';
+            refreshBtn.style.padding = '8px 16px';
+            refreshBtn.onclick = () => {
+                console.log('🔄 Manual refresh triggered');
+                showDebug('Manually refreshing interfaces...');
+                loadInterfaces();
+            };
+            
+            // Add refresh button after interface select
+            interfaceSelect.parentNode.appendChild(refreshBtn);
+            
+            // Test the interfaces endpoint directly
+            setTimeout(() => {
+                fetch('/interfaces')
+                    .then(response => {
+                        console.log('Direct test - Response status:', response.status);
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Direct test - Data received:', data);
+                        if (data.length > 0) {
+                            showDebug(`Direct test successful - ${data.length} interfaces found`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Direct test failed:', error);
+                        showDebug(`Direct test failed: ${error.message}`);
+                    });
+            }, 2000);
+        });
+        
+        console.log('✅ JavaScript initialization complete');
     </script>
 </body>
 </html>
