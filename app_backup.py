@@ -45,6 +45,38 @@ class IDSRule:
         """Get alert message for this rule"""
         return f"{self.name}: {self.description}"
 
+class GoogleVisitRule(IDSRule):
+    """Rule to detect visits to google.co.in"""
+    def __init__(self):
+        super().__init__(
+            name="Google India Visit Detected",
+            description="User accessed google.co.in domain",
+            severity="Low"
+        )
+    
+    def check(self, packet_info, raw_data=None):
+        # Check if this is HTTP traffic (port 80 or 443)
+        if packet_info.get('dst_port') in [80, 443] or packet_info.get('src_port') in [80, 443]:
+            # Try to extract domain from payload (simplified)
+            if raw_data and packet_info.get('protocol') == 'TCP':
+                try:
+                    payload = raw_data[40:].decode('utf-8', errors='ignore')  # Skip IP+TCP headers
+                    if 'google.co.in' in payload.lower():
+                        return True
+                    # Also check for Host header
+                    if 'host: google.co.in' in payload.lower():
+                        return True
+                except:
+                    pass
+        
+        # Check destination IP (Google's IP ranges - simplified check)
+        dst_ip = packet_info.get('dst_ip', '')
+        google_ip_prefixes = ['142.250.', '172.217.', '216.58.', '74.125.']
+        if any(dst_ip.startswith(prefix) for prefix in google_ip_prefixes):
+            return True
+        
+        return False
+
 class SuspiciousPortScanRule(IDSRule):
     """Rule to detect potential port scanning"""
     def __init__(self):
@@ -55,7 +87,7 @@ class SuspiciousPortScanRule(IDSRule):
         )
         self.port_attempts = {}  # Track connection attempts
         self.time_window = 60  # 60 seconds
-        self.threshold = 20  # INCREASED: 20 different ports (was 10) - more realistic
+        self.threshold = 10  # 10 different ports in time window
     
     def check(self, packet_info, raw_data=None):
         if packet_info.get('protocol') != 'TCP':
@@ -64,11 +96,6 @@ class SuspiciousPortScanRule(IDSRule):
         src_ip = packet_info.get('src_ip')
         dst_port = packet_info.get('dst_port')
         current_time = time.time()
-        
-        # Skip common legitimate ports to reduce false positives
-        legitimate_ports = {80, 443, 53, 25, 110, 143, 993, 995, 587}
-        if dst_port in legitimate_ports:
-            return False
         
         if src_ip and dst_port:
             if src_ip not in self.port_attempts:
@@ -101,10 +128,17 @@ class LargePacketRule(IDSRule):
             description="Packet size exceeds normal threshold",
             severity="Medium"
         )
-        self.size_threshold = 8000  # INCREASED: 8KB (was 1.5KB) - more realistic for modern networks
+        self.size_threshold = 1500  # bytes
     
     def check(self, packet_info, raw_data=None):
         return packet_info.get('size', 0) > self.size_threshold
+
+
+
+# ========================================
+# STEP 1: Add these new rule classes to app.py
+# Insert them AFTER the existing LargePacketRule class (around line 150)
+# ========================================
 
 class DDoSDetectionRule(IDSRule):
     """Rule to detect potential DDoS attacks"""
@@ -115,16 +149,12 @@ class DDoSDetectionRule(IDSRule):
             severity="High"
         )
         self.packet_counts = {}
-        self.time_window = 30  # INCREASED: 30 seconds (was 10) - longer observation window
-        self.threshold = 200   # INCREASED: 200 packets in 30 seconds (was 50 in 10) - much higher threshold
+        self.time_window = 10  # 10 seconds
+        self.threshold = 100   # 100 packets in 10 seconds
     
     def check(self, packet_info, raw_data=None):
         src_ip = packet_info.get('src_ip')
         current_time = time.time()
-        
-        # Skip localhost traffic to avoid false positives
-        if src_ip and src_ip.startswith('127.'):
-            return False
         
         if src_ip:
             if src_ip not in self.packet_counts:
@@ -154,10 +184,9 @@ class BruteForceRule(IDSRule):
             severity="High"
         )
         self.connection_attempts = {}
-        self.time_window = 300  # INCREASED: 5 minutes (was 1 minute) - longer observation
-        self.threshold = 50     # INCREASED: 50 attempts in 5 minutes (was 10 in 1 minute)
-        # REDUCED target ports - only authentication services, not web traffic
-        self.target_ports = [22, 23, 21, 3389, 5900]  # SSH, Telnet, FTP, RDP, VNC only
+        self.time_window = 300  # 5 minutes
+        self.threshold = 20     # 20 attempts in 5 minutes
+        self.target_ports = [22, 23, 21, 3389, 5900, 25, 110, 143, 993, 995]  # SSH, Telnet, FTP, RDP, VNC, SMTP, POP3, IMAP
     
     def check(self, packet_info, raw_data=None):
         if packet_info.get('protocol') != 'TCP':
@@ -165,14 +194,11 @@ class BruteForceRule(IDSRule):
         
         dst_port = packet_info.get('dst_port')
         src_ip = packet_info.get('src_ip')
+        dst_ip = packet_info.get('dst_ip')
         current_time = time.time()
         
-        # Skip localhost traffic
-        if src_ip and src_ip.startswith('127.'):
-            return False
-        
-        if dst_port in self.target_ports and src_ip:
-            key = f"{src_ip}:{dst_port}"
+        if dst_port in self.target_ports and src_ip and dst_ip:
+            key = f"{src_ip}:{dst_ip}:{dst_port}"
             
             if key not in self.connection_attempts:
                 self.connection_attempts[key] = []
@@ -200,8 +226,8 @@ class DNSTunnelingRule(IDSRule):
             severity="High"
         )
         self.dns_queries = {}
-        self.time_window = 60   # INCREASED: 60 seconds (was 30)
-        self.threshold = 100    # INCREASED: 100 DNS queries per minute (was 20 in 30 seconds)
+        self.time_window = 60  # 1 minute
+        self.threshold = 50    # 50 DNS queries per minute from same source
     
     def check(self, packet_info, raw_data=None):
         if (packet_info.get('protocol') == 'UDP' and 
@@ -209,10 +235,6 @@ class DNSTunnelingRule(IDSRule):
             
             src_ip = packet_info.get('src_ip')
             current_time = time.time()
-            
-            # Skip localhost DNS queries
-            if src_ip and src_ip.startswith('127.'):
-                return False
             
             if src_ip:
                 if src_ip not in self.dns_queries:
@@ -258,10 +280,6 @@ class SuspiciousPayloadRule(IDSRule):
         if raw_data and len(raw_data) > 40:  # Skip headers
             payload = raw_data[40:].lower()
             
-            # Only check payloads that are reasonably sized (avoid large file transfers)
-            if len(payload) > 10000:  # Skip very large payloads
-                return False
-            
             for pattern in self.malicious_patterns:
                 if pattern in payload:
                     return True
@@ -277,17 +295,13 @@ class NetworkReconRule(IDSRule):
             severity="Medium"
         )
         self.icmp_requests = {}
-        self.time_window = 60   # INCREASED: 60 seconds (was 20)
-        self.threshold = 50     # INCREASED: 50 ICMP requests in 60 seconds (was 10 in 20)
+        self.time_window = 30  # 30 seconds
+        self.threshold = 20    # 20 ICMP requests in 30 seconds
     
     def check(self, packet_info, raw_data=None):
         if packet_info.get('protocol') == 'ICMP':
             src_ip = packet_info.get('src_ip')
             current_time = time.time()
-            
-            # Skip localhost ICMP
-            if src_ip and src_ip.startswith('127.'):
-                return False
             
             if src_ip:
                 if src_ip not in self.icmp_requests:
@@ -307,23 +321,87 @@ class NetworkReconRule(IDSRule):
         
         return False
 
+# ========================================
+# STEP 2: Modify the IDSEngine __init__ method
+# Find the IDSEngine class (around line 160) and replace its __init__ method
+# ========================================
+
+class IDSEngine:
+    """Intrusion Detection System Engine"""
+    # FIND THIS (around line 165):
+def __init__(self):
+    self.rules = [
+        GoogleVisitRule(),
+        SuspiciousPortScanRule(),
+        LargePacketRule()
+    ]
+    self.total_alerts = 0
+
+# REPLACE WITH THIS:
+def __init__(self):
+    self.rules = [
+        GoogleVisitRule(),
+        SuspiciousPortScanRule(),
+        LargePacketRule(),
+        DDoSDetectionRule(),           # NEW
+        BruteForceRule(),              # NEW  
+        DNSTunnelingRule(),            # NEW
+        SuspiciousPayloadRule(),       # NEW
+        NetworkReconRule()             # NEW
+    ]
+    self.total_alerts = 0
+    
+    # Rest of the IDSEngine methods remain the same...
+    def add_rule(self, rule):
+        """Add a new rule to the IDS"""
+        self.rules.append(rule)
+    
+    def analyze_packet(self, packet_info, raw_data=None):
+        """Analyze packet against all rules"""
+        triggered_alerts = []
+        
+        for rule in self.rules:
+            if rule.enabled and rule.check(packet_info, raw_data):
+                rule.trigger_count += 1
+                alert = {
+                    'id': self.total_alerts + len(triggered_alerts) + 1,
+                    'timestamp': datetime.now().strftime("%H:%M:%S.%f")[:-3],
+                    'rule_name': rule.name,
+                    'description': rule.description,
+                    'severity': rule.severity,
+                    'src_ip': packet_info.get('src_ip'),
+                    'dst_ip': packet_info.get('dst_ip'),
+                    'src_port': packet_info.get('src_port'),
+                    'dst_port': packet_info.get('dst_port'),
+                    'protocol': packet_info.get('protocol'),
+                    'packet_size': packet_info.get('size'),
+                    'packet_id': packet_info.get('id')
+                }
+                triggered_alerts.append(alert)
+        
+        self.total_alerts += len(triggered_alerts)
+        return triggered_alerts
+    
+    def get_rules_status(self):
+        """Get status of all rules"""
+        return [{
+            'name': rule.name,
+            'description': rule.description,
+            'severity': rule.severity,
+            'enabled': rule.enabled,
+            'trigger_count': rule.trigger_count
+        } for rule in self.rules]
+
+
 class IDSEngine:
     """Intrusion Detection System Engine"""
     def __init__(self):
         self.rules = [
+            GoogleVisitRule(),
             SuspiciousPortScanRule(),
-            LargePacketRule(),
-            DDoSDetectionRule(),
-            BruteForceRule(),
-            DNSTunnelingRule(),
-            SuspiciousPayloadRule(),
-            NetworkReconRule()
+            LargePacketRule()
         ]
         self.total_alerts = 0
-        print("🛡️  IDS Engine initialized with realistic thresholds")
-        print("📊 Rule Summary:")
-        for rule in self.rules:
-            print(f"   • {rule.name} ({rule.severity})")
     
     def add_rule(self, rule):
         """Add a new rule to the IDS"""
@@ -639,7 +717,6 @@ if __name__ == '__main__':
     print("• Rule-based threat detection")
     print("• Alert notifications")
     print("• Web-based monitoring interface")
-    print("• Realistic thresholds to prevent false positives")
     print("=" * 60)
     print("Access at: http://localhost:5000")
     print("Remember to run as Administrator!")
