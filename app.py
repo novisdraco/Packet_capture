@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Intrusion Detection System with Packet Capture
-Web interface with rule-based threat detection and alerting
+Enhanced Intrusion Detection System with YARA Integration
+Web interface with rule-based threat detection, YARA pattern matching, and alerting
 """
 
 from flask import Flask, render_template, request, jsonify
@@ -15,6 +15,16 @@ from datetime import datetime
 import json
 import re
 import time
+
+# Import YARA integration (save the previous artifact as yara_ids.py)
+try:
+    from yara_ids import YARAEngine, YARAIDSRule, integrate_yara_into_ids, create_enhanced_alert
+    YARA_AVAILABLE = True
+    print("✅ YARA integration loaded successfully")
+except ImportError as e:
+    print(f"⚠️  YARA not available: {e}")
+    print("💡 Install YARA: pip install yara-python")
+    YARA_AVAILABLE = False
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'packet_capture_ids_secret'
@@ -307,9 +317,10 @@ class NetworkReconRule(IDSRule):
         
         return False
 
-class IDSEngine:
-    """Intrusion Detection System Engine"""
+class EnhancedIDSEngine:
+    """Enhanced Intrusion Detection System Engine with YARA support"""
     def __init__(self):
+        # Initialize traditional rules
         self.rules = [
             SuspiciousPortScanRule(),
             LargePacketRule(),
@@ -319,29 +330,56 @@ class IDSEngine:
             SuspiciousPayloadRule(),
             NetworkReconRule()
         ]
+        
         self.total_alerts = 0
-        print("🛡️  IDS Engine initialized with realistic thresholds")
+        self.yara_engine = None
+        
+        # Initialize YARA if available
+        if YARA_AVAILABLE:
+            try:
+                self.yara_engine = integrate_yara_into_ids(self)
+                print("🔍 YARA engine initialized successfully")
+            except Exception as e:
+                print(f"❌ Failed to initialize YARA: {e}")
+                self.yara_engine = None
+        else:
+            print("⚠️ YARA engine not available - continuing with traditional rules only")
+        
+        print(f"🛡️ Enhanced IDS Engine initialized with {len(self.rules)} rules")
+        self.print_rule_summary()
+    
+    def print_rule_summary(self):
+        """Print summary of loaded rules"""
         print("📊 Rule Summary:")
         for rule in self.rules:
-            print(f"   • {rule.name} ({rule.severity})")
+            rule_type = "YARA" if hasattr(rule, 'yara_engine') else "Traditional"
+            print(f"   • {rule.name} ({rule.severity}) [{rule_type}]")
+        
+        if self.yara_engine:
+            yara_stats = self.yara_engine.get_statistics()
+            print(f"   • YARA Rules: {yara_stats['enabled_rules']} enabled, {yara_stats['disabled_rules']} disabled")
     
     def add_rule(self, rule):
         """Add a new rule to the IDS"""
         self.rules.append(rule)
     
     def analyze_packet(self, packet_info, raw_data=None):
-        """Analyze packet against all rules"""
+        """Analyze packet against all rules including YARA"""
         triggered_alerts = []
         
+        # Check traditional rules first
         for rule in self.rules:
             if rule.enabled and rule.check(packet_info, raw_data):
                 rule.trigger_count += 1
+                
+                # Create base alert
                 alert = {
                     'id': self.total_alerts + len(triggered_alerts) + 1,
                     'timestamp': datetime.now().strftime("%H:%M:%S.%f")[:-3],
                     'rule_name': rule.name,
                     'description': rule.description,
                     'severity': rule.severity,
+                    'detection_type': 'Traditional',
                     'src_ip': packet_info.get('src_ip'),
                     'dst_ip': packet_info.get('dst_ip'),
                     'src_port': packet_info.get('src_port'),
@@ -350,26 +388,57 @@ class IDSEngine:
                     'packet_size': packet_info.get('size'),
                     'packet_id': packet_info.get('id')
                 }
+                
+                # Enhanced alert for YARA rules
+                if hasattr(rule, 'yara_engine') and 'yara_matches' in packet_info:
+                    alert = create_enhanced_alert(alert, packet_info['yara_matches'])
+                    alert['yara_details'] = packet_info['yara_matches']
+                
                 triggered_alerts.append(alert)
         
         self.total_alerts += len(triggered_alerts)
         return triggered_alerts
     
     def get_rules_status(self):
-        """Get status of all rules"""
-        return [{
-            'name': rule.name,
-            'description': rule.description,
-            'severity': rule.severity,
-            'enabled': rule.enabled,
-            'trigger_count': rule.trigger_count
-        } for rule in self.rules]
+        """Get status of all rules including YARA statistics"""
+        rule_status = []
+        
+        for rule in self.rules:
+            status = {
+                'name': rule.name,
+                'description': rule.description,
+                'severity': rule.severity,
+                'enabled': rule.enabled,
+                'trigger_count': rule.trigger_count,
+                'type': 'YARA' if hasattr(rule, 'yara_engine') else 'Traditional'
+            }
+            rule_status.append(status)
+        
+        # Add YARA engine statistics if available
+        if self.yara_engine:
+            yara_stats = self.yara_engine.get_statistics()
+            rule_status.append({
+                'name': 'YARA Engine Statistics',
+                'description': f"Total: {yara_stats['total_rules']}, Enabled: {yara_stats['enabled_rules']}, Matches: {yara_stats['total_matches']}",
+                'severity': 'Info',
+                'enabled': True,
+                'trigger_count': yara_stats['total_matches'],
+                'type': 'YARA Statistics'
+            })
+        
+        return rule_status
+    
+    def get_yara_statistics(self):
+        """Get detailed YARA statistics"""
+        if self.yara_engine:
+            return self.yara_engine.get_statistics()
+        return {'error': 'YARA engine not available'}
 
 class PacketCapture:
     def __init__(self):
         self.conn = None
         self.is_running = False
-        self.ids_engine = IDSEngine()
+        self.ids_engine = EnhancedIDSEngine()
         
     def get_network_interfaces(self):
         """Get list of available network interfaces"""
@@ -415,7 +484,7 @@ class PacketCapture:
             self.conn = None
     
     def capture_packets(self):
-        """Capture packets and analyze with IDS"""
+        """Capture packets and analyze with enhanced IDS"""
         global captured_packets, is_capturing, alerts
         packet_count = 0
         
@@ -427,7 +496,7 @@ class PacketCapture:
                 # Parse packet
                 packet_info = self.parse_packet(raw_data, packet_count)
                 
-                # IDS Analysis
+                # Enhanced IDS Analysis (includes YARA)
                 packet_alerts = self.ids_engine.analyze_packet(packet_info, raw_data)
                 
                 # Store alerts
@@ -436,7 +505,7 @@ class PacketCapture:
                     if len(alerts) > max_alerts:
                         alerts.pop(0)
                     
-                    # Emit alert to web interface
+                    # Emit enhanced alert to web interface
                     socketio.emit('new_alert', alert)
                 
                 # Store packet
@@ -548,7 +617,7 @@ class PacketCapture:
         }
         return protocols.get(protocol_num, f'Unknown({protocol_num})')
 
-# Initialize packet capture with IDS
+# Initialize enhanced packet capture with YARA
 packet_capture = PacketCapture()
 
 @app.route('/')
@@ -584,7 +653,9 @@ def start_capture():
         capture_thread = threading.Thread(target=packet_capture.capture_packets)
         capture_thread.daemon = True
         capture_thread.start()
-        return jsonify({'success': True, 'message': 'Capture started with IDS monitoring'})
+        
+        yara_status = "with YARA support" if YARA_AVAILABLE else "traditional rules only"
+        return jsonify({'success': True, 'message': f'Enhanced IDS started {yara_status}'})
     else:
         return jsonify({'success': False, 'message': f'Failed to start capture: {result[1]}'})
 
@@ -598,7 +669,7 @@ def stop_capture():
     
     is_capturing = False
     packet_capture.stop_capture()
-    return jsonify({'success': True, 'message': 'Capture stopped'})
+    return jsonify({'success': True, 'message': 'Enhanced IDS stopped'})
 
 @app.route('/packets')
 def get_packets():
@@ -615,10 +686,41 @@ def get_rules():
     """Get IDS rules status"""
     return jsonify(packet_capture.ids_engine.get_rules_status())
 
+@app.route('/yara/stats')
+def get_yara_stats():
+    """Get YARA engine statistics"""
+    return jsonify(packet_capture.ids_engine.get_yara_statistics())
+
+@app.route('/yara/rules')
+def get_yara_rules():
+    """Get YARA rules details"""
+    if packet_capture.ids_engine.yara_engine:
+        stats = packet_capture.ids_engine.yara_engine.get_statistics()
+        return jsonify(stats['rule_details'])
+    return jsonify({'error': 'YARA engine not available'})
+
+@app.route('/yara/toggle/<rule_name>', methods=['POST'])
+def toggle_yara_rule(rule_name):
+    """Toggle YARA rule on/off"""
+    if not packet_capture.ids_engine.yara_engine:
+        return jsonify({'success': False, 'message': 'YARA engine not available'})
+    
+    yara_engine = packet_capture.ids_engine.yara_engine
+    
+    if hasattr(yara_engine, 'rules') and rule_name in yara_engine.rules:
+        rule = yara_engine.rules[rule_name]
+        rule.enabled = not rule.enabled
+        status = "enabled" if rule.enabled else "disabled"
+        return jsonify({'success': True, 'message': f'YARA rule {rule_name} {status}'})
+    
+    return jsonify({'success': False, 'message': f'YARA rule {rule_name} not found'})
+
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
-    emit('connected', {'message': 'Connected to IDS packet capture server'})
+    yara_status = "with YARA support" if YARA_AVAILABLE else "(YARA not available)"
+    emit('connected', {'message': f'Connected to Enhanced IDS server {yara_status}'})
+    
     # Send existing data to new client
     for packet in captured_packets[-20:]:
         emit('new_packet', packet)
@@ -632,11 +734,16 @@ def handle_disconnect():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("INTRUSION DETECTION SYSTEM - PACKET CAPTURE")
+    print("ENHANCED INTRUSION DETECTION SYSTEM")
     print("=" * 60)
     print("Features:")
     print("• Real-time packet capture")
-    print("• Rule-based threat detection")
+    print("• Traditional rule-based threat detection")
+    if YARA_AVAILABLE:
+        print("• YARA pattern matching and malware detection")
+        print("• Advanced payload analysis")
+    else:
+        print("• YARA support: Not available (install yara-python)")
     print("• Alert notifications")
     print("• Web-based monitoring interface")
     print("• Realistic thresholds to prevent false positives")
