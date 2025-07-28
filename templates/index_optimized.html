@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>High-Performance IDS - 500+ PPS Attack Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header h1 {
+            color: #4a5568;
+            margin-bottom: 5px;
+            font-size: 2.2rem;
+        }
+        
+        .header .subtitle {
+            color: #718096;
+            font-size: 1rem;
+        }
+        
+        .performance-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            padding: 6px 15px;
+            border-radius: 25px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-left: 15px;
+            box-shadow: 0 2px 10px rgba(72, 187, 120, 0.3);
+            animation: pulse-glow 2s infinite;
+        }
+        
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 2px 10px rgba(72, 187, 120, 0.3); }
+            50% { box-shadow: 0 4px 20px rgba(72, 187, 120, 0.6); }
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+        
+        .stat-card.performance-card {
+            background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(56, 161, 105, 0.05) 100%);
+            border: 2px solid rgba(72, 187, 120, 0.2);
+        }
+        
+        .stat-card.alert-card {
+            background: linear-gradient(135deg, rgba(229, 62, 62, 0.1) 0%, rgba(245, 101, 101, 0.05) 100%);
+            border: 2px solid rgba(229, 62, 62, 0.2);
+        }
+        
+        .stat-number {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #667eea;
+            display: block;
+            margin-bottom: 2px;
+        }
+        
+        .stat-label {
+            color: #718096;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .performance-number {
+            color: #48bb78 !important;
+        }
+        
+        .alert-stat {
+            color: #e53e3e !important;
+        }
+        
+        .performance-stats {
+            background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(56, 161, 105, 0.05) 100%);
+            border: 1px solid rgba(72, 187, 120, 0.2);
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        
+        .controls {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+        
+        select, button {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        select:focus {
+            border-color: #48bb78;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.1);
+        }
+        
+        button {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(72, 187, 120, 0.4);
+        }
+        
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .status {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .status-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #f56565;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.active {
+            background: #48bb78;
+            box-shadow: 0 0 10px rgba(72, 187, 120, 0.5);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .alerts-container, .packets-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            height: 550px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .alerts-header, .packets-header {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            padding: 15px 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        
+        .alerts-header {
+            background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
+        }
+        
+        .content-area {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .alerts-list, .packets-list {
+            height: 100%;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+        
+        .alert, .packet {
+            border-bottom: 1px solid #e2e8f0;
+            padding: 12px 20px;
+            transition: background-color 0.2s ease;
+            min-height: 70px;
+        }
+        
+        .alert {
+            border-left: 4px solid #e53e3e;
+            background: linear-gradient(90deg, rgba(229, 62, 62, 0.08) 0%, transparent 100%);
+            animation: alert-flash 0.5s ease-out;
+        }
+        
+        @keyframes alert-flash {
+            0% { background: rgba(229, 62, 62, 0.2); }
+            100% { background: linear-gradient(90deg, rgba(229, 62, 62, 0.08) 0%, transparent 100%); }
+        }
+        
+        .packet {
+            animation: packet-slide 0.3s ease-out;
+        }
+        
+        @keyframes packet-slide {
+            0% { transform: translateX(-10px); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        
+        .alert:hover, .packet:hover {
+            background-color: #f7fafc;
+        }
+        
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        
+        .alert-title {
+            font-weight: 600;
+            color: #e53e3e;
+            font-size: 1rem;
+        }
+        
+        .severity-badge {
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 0.7em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .severity-low {
+            background: #c6f6d5;
+            color: #276749;
+        }
+        
+        .severity-medium {
+            background: #fbb344;
+            color: #744210;
+        }
+        
+        .severity-high {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        
+        .alert-time {
+            color: #718096;
+            font-size: 0.85em;
+        }
+        
+        .alert-details {
+            color: #4a5568;
+            margin-bottom: 6px;
+            font-size: 0.9em;
+        }
+        
+        .alert-network {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8em;
+            color: #718096;
+            background: #f7fafc;
+            padding: 6px;
+            border-radius: 4px;
+        }
+        
+        .packet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        
+        .packet-id {
+            font-weight: 600;
+            color: #48bb78;
+            margin-right: 10px;
+            font-size: 0.9em;
+        }
+        
+        .packet-time {
+            color: #718096;
+            font-size: 0.8em;
+        }
+        
+        .packet-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        
+        .packet-detail {
+            font-size: 0.85em;
+            color: #4a5568;
+        }
+        
+        .packet-detail strong {
+            color: #2d3748;
+        }
+        
+        .protocol-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .protocol-tcp {
+            background: #bee3f8;
+            color: #2b6cb0;
+        }
+        
+        .protocol-udp {
+            background: #c6f6d5;
+            color: #276749;
+        }
+        
+        .protocol-icmp {
+            background: #fed7d7;
+            color: #c53030;
+        }
+        
+        .protocol-other {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        
+        .no-items {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+            font-size: 0.9rem;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(229, 62, 62, 0.4);
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.4s ease;
+            max-width: 350px;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        .performance-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(72, 187, 120, 0.9);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        
+        .performance-indicator.high {
+            background: rgba(72, 187, 120, 0.9);
+        }
+        
+        .performance-indicator.medium {
+            background: rgba(251, 179, 68, 0.9);
+        }
+        
+        .performance-indicator.low {
+            background: rgba(229, 62, 62, 0.9);
+        }
+        
+        .loading-indicator {
+            text-align: center;
+            padding: 20px;
+            color: #718096;
+            font-style: italic;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .dashboard {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .button-group {
+                grid-template-columns: 1fr;
+            }
+            
+            .packet-info {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .performance-badge {
+                display: block;
+                margin: 10px 0 0 0;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ High-Performance IDS<span class="performance-badge" id="perf-badge">500+ PPS READY</span></h1>
+            <p class="subtitle">Real-time packet capture with high-speed attack detection</p>
+        </div>
+        
+        <div class="dashboard">
+            <div class="stat-card performance-card">
+                <span class="stat-number performance-number" id="packet-rate">0</span>
+                <div class="stat-label">Packets/Second</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="packet-count">0</span>
+                <div class="stat-label">Total Packets</div>
+            </div>
+            <div class="stat-card alert-card">
+                <span class="stat-number alert-stat" id="alert-count">0</span>
+                <div class="stat-label">Security Alerts</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="queue-size">0</span>
+                <div class="stat-label">Queue Size</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="dropped-count">0</span>
+                <div class="stat-label">Dropped Packets</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="processing-threads">0</span>
+                <div class="stat-label">Processing Threads</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="threat-level">LOW</span>
+                <div class="stat-label">Threat Level</div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="performance-stats" id="performance-stats">
+                <strong>Performance:</strong> Ready for high-speed attack detection (500+ packets/second)
+            </div>
+            
+            <div class="control-group">
+                <label for="interface-select">Select Network Interface:</label>
+                <select id="interface-select">
+                    <option value="">Loading interfaces...</option>
+                </select>
+            </div>
+            
+            <div class="button-group">
+                <button id="start-btn">Start High-Performance Monitoring</button>
+                <button id="stop-btn" disabled>Stop Monitoring</button>
+            </div>
+        </div>
+        
+        <div class="status">
+            <div class="status-indicator">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Ready for high-performance attack detection</span>
+                <span id="session-time" style="margin-left: auto;">Session: 00:00:00</span>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="alerts-container">
+                <div class="alerts-header">
+                    🚨 Security Alerts (Attack Detection)
+                    <span id="alert-rate" style="margin-left: auto; font-size: 0.8em;">0/min</span>
+                </div>
+                <div class="content-area">
+                    <div class="performance-indicator" id="alert-performance">READY</div>
+                    <div class="alerts-list" id="alerts-list">
+                        <div class="no-items">
+                            No security alerts yet. High-performance monitoring ready for attack testing.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="packets-container">
+                <div class="packets-header">
+                    📊 Network Traffic (High-Speed Processing)
+                    <span id="packet-throughput" style="margin-left: auto; font-size: 0.8em;">0 PPS</span>
+                </div>
+                <div class="content-area">
+                    <div class="performance-indicator" id="packet-performance">READY</div>
+                    <div class="packets-list" id="packets-list">
+                        <div class="no-items">
+                            No packets captured yet. Start high-performance monitoring to see network traffic.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification for alerts -->
+    <div class="notification" id="alert-notification">
+        <strong>🚨 Attack Detected!</strong>
+        <div id="notification-message">New security threat detected</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        console.log('🚀 Starting High-Performance IDS Web Interface...');
+        
+        // Initialize Socket.IO with high-performance settings
+        const socket = io({
+            transports: ['websocket', 'polling'],
+            upgrade: true,
+            rememberUpgrade: true,
+            timeout: 20000
+        });
+        
+        // UI Elements
+        const interfaceSelect = document.getElementById('interface-select');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const performanceStats = document.getElementById('performance-stats');
+        const perfBadge = document.getElementById('perf-badge');
+        
+        // Stats elements
+        const packetRate = document.getElementById('packet-rate');
+        const packetCount = document.getElementById('packet-count');
+        const alertCount = document.getElementById('alert-count');
+        const queueSize = document.getElementById('queue-size');
+        const droppedCount = document.getElementById('dropped-count');
+        const processingThreads = document.getElementById('processing-threads');
+        const threatLevel = document.getElementById('threat-level');
+        const sessionTime = document.getElementById('session-time');
+        const alertRate = document.getElementById('alert-rate');
+        const packetThroughput = document.getElementById('packet-throughput');
+        
+        // Content areas
+        const packetsList = document.getElementById('packets-list');
+        const alertsList = document.getElementById('alerts-list');
+        const alertNotification = document.getElementById('alert-notification');
+        const notificationMessage = document.getElementById('notification-message');
+        
+        // Performance indicators
+        const alertPerformance = document.getElementById('alert-performance');
+        const packetPerformance = document.getElementById('packet-performance');
+        
+        // Performance tracking
+        let stats = {
+            packets: 0,
+            alerts: 0,
+            dropped: 0,
+            queue: 0,
+            packetsPerSecond: 0,
+            processingThreads: 0,
+            lastUpdate: Date.now()
+        };
+        
+        let isCapturing = false;
+        let sessionStartTime = null;
+        let sessionTimer = null;
+        let displayedPackets = 0;
+        let displayedAlerts = 0;
+        const MAX_DISPLAY_ITEMS = 150;  // Higher limit for performance testing
+        
+        // Performance monitoring
+        let performanceHistory = [];
+        let alertHistory = [];
+        
+        // Load interfaces on page load
+        window.addEventListener('load', () => {
+            console.log('🌐 High-performance interface loaded');
+            loadInterfaces();
+            updatePerformanceDisplay();
+        });
+        
+        // Button event listeners
+        startBtn.addEventListener('click', startCapture);
+        stopBtn.addEventListener('click', stopCapture);
+        
+        // Socket event listeners
+        socket.on('connected', (data) => {
+            console.log('✅ Connected to high-performance IDS server:', data.message);
+            updatePerformanceDisplay(`Connected: ${data.environment} mode - ${data.performance_info}`);
+        });
+        
+        // High-performance batched updates
+        socket.on('packet_batch', (packets) => {
+            handlePacketBatch(packets);
+        });
+        
+        socket.on('alert_batch', (alerts) => {
+            handleAlertBatch(alerts);
+        });
+        
+        socket.on('stats_update', (newStats) => {
+            updateStats(newStats);
+        });
+        
+        socket.on('capture_error', (data) => {
+            console.error('❌ Capture error:', data.error);
+            alert('Capture Error: ' + data.error);
+            stopCapture();
+        });
+        
+        function handlePacketBatch(packets) {
+            if (!packets || packets.length === 0) return;
+            
+            // Remove "no items" message if present
+            const noItems = packetsList.querySelector('.no-items');
+            if (noItems) {
+                packetsList.innerHTML = '';
+                displayedPackets = 0;
+            }
+            
+            // Add packets efficiently
+            const fragment = document.createDocumentFragment();
+            
+            packets.forEach(packet => {
+                const packetElement = createPacketElement(packet);
+                fragment.appendChild(packetElement);
+                displayedPackets++;
+            });
+            
+            // Insert at the beginning
+            packetsList.insertBefore(fragment, packetsList.firstChild);
+            
+            // Limit displayed items for performance
+            while (displayedPackets > MAX_DISPLAY_ITEMS) {
+                const lastChild = packetsList.lastElementChild;
+                if (lastChild) {
+                    packetsList.removeChild(lastChild);
+                    displayedPackets--;
+                }
+            }
+            
+            // Update performance indicators
+            updatePacketPerformance();
+        }
+        
+        function handleAlertBatch(alerts) {
+            if (!alerts || alerts.length === 0) return;
+            
+            console.log(`🚨 Received ${alerts.length} alerts:`, alerts);
+            
+            // Remove "no items" message if present
+            const noItems = alertsList.querySelector('.no-items');
+            if (noItems) {
+                alertsList.innerHTML = '';
+                displayedAlerts = 0;
+            }
+            
+            // Add alerts efficiently
+            const fragment = document.createDocumentFragment();
+            
+            alerts.forEach(alert => {
+                const alertElement = createAlertElement(alert);
+                fragment.appendChild(alertElement);
+                displayedAlerts++;
+                
+                // Show notification for first alert in batch
+                if (alerts.indexOf(alert) === 0) {
+                    showAlertNotification(alert);
+                }
+            });
+            
+            // Insert at the beginning
+            alertsList.insertBefore(fragment, alertsList.firstChild);
+            
+            // Limit displayed items
+            while (displayedAlerts > MAX_DISPLAY_ITEMS) {
+                const lastChild = alertsList.lastElementChild;
+                if (lastChild) {
+                    alertsList.removeChild(lastChild);
+                    displayedAlerts--;
+                }
+            }
+            
+            // Update threat level and performance indicators
+            updateThreatLevel(alerts.length);
+            updateAlertPerformance();
+            
+            // Track alert history
+            alertHistory.push({
+                timestamp: Date.now(),
+                count: alerts.length
+            });
+            
+            // Keep only recent history
+            const cutoff = Date.now() - 60000; // 1 minute
+            alertHistory = alertHistory.filter(entry => entry.timestamp > cutoff);
+        }
+        
+        function createPacketElement(packet) {
+            const packetElement = document.createElement('div');
+            packetElement.className = 'packet';
+            
+            const protocolClass = getProtocolClass(packet.protocol);
+            const portsInfo = packet.src_port ? `${packet.src_port} → ${packet.dst_port}` : '';
+            const flagsInfo = packet.flags ? ` [${packet.flags}]` : '';
+            
+            packetElement.innerHTML = `
+                <div class="packet-header">
+                    <span class="packet-id">#${packet.id}</span>
+                    <span class="protocol-badge ${protocolClass}">${packet.protocol}</span>
+                    <span class="packet-time">${packet.timestamp}</span>
+                </div>
+                <div class="packet-info">
+                    <div class="packet-detail">
+                        <strong>Src:</strong> ${packet.src_ip}${packet.src_port ? ':' + packet.src_port : ''}
+                    </div>
+                    <div class="packet-detail">
+                        <strong>Dst:</strong> ${packet.dst_ip}${packet.dst_port ? ':' + packet.dst_port : ''}
+                    </div>
+                    <div class="packet-detail">
+                        <strong>Size:</strong> ${packet.size}B
+                    </div>
+                    <div class="packet-detail">
+                        <strong>Info:</strong> ${portsInfo}${flagsInfo}
+                    </div>
+                </div>
+            `;
+            
+            return packetElement;
+        }
+        
+        function createAlertElement(alert) {
+            const alertElement = document.createElement('div');
+            alertElement.className = 'alert';
+            
+            const severityClass = `severity-${alert.severity.toLowerCase()}`;
+            
+            alertElement.innerHTML = `
+                <div class="alert-header">
+                    <div class="alert-title">${alert.rule_name}</div>
+                    <div class="severity-badge ${severityClass}">${alert.severity}</div>
+                </div>
+                <div class="alert-time">${alert.timestamp}</div>
+                <div class="alert-details">${alert.description}</div>
+                <div class="alert-network">
+                    ${alert.src_ip}${alert.src_port ? ':' + alert.src_port : ''} → 
+                    ${alert.dst_ip}${alert.dst_port ? ':' + alert.dst_port : ''} 
+                    [${alert.protocol}] #${alert.packet_id}
+                </div>
+            `;
+            
+            return alertElement;
+        }
+        
+        function updateStats(newStats) {
+            // Update counters with smooth animations
+            animateCounter(packetCount, stats.packets, newStats.packets || 0);
+            animateCounter(alertCount, stats.alerts, newStats.alerts || 0);
+            animateCounter(droppedCount, stats.dropped, newStats.dropped || 0);
+            animateCounter(queueSize, stats.queue, newStats.queue_size || 0);
+            animateCounter(processingThreads, stats.processingThreads, newStats.processing_threads || 0);
+            
+            // Update packet rate with special formatting
+            const pps = newStats.packets_per_second || 0;
+            packetRate.textContent = pps;
+            packetThroughput.textContent = `${pps} PPS`;
+            
+            // Update performance badge based on packet rate
+            updatePerformanceBadge(pps);
+            
+            // Calculate alert rate
+            const alertsInLastMinute = alertHistory.reduce((sum, entry) => sum + entry.count, 0);
+            alertRate.textContent = `${alertsInLastMinute}/min`;
+            
+            // Update stats
+            stats = {
+                packets: newStats.packets || 0,
+                alerts: newStats.alerts || 0,
+                dropped: newStats.dropped || 0,
+                queue: newStats.queue_size || 0,
+                packetsPerSecond: pps,
+                processingThreads: newStats.processing_threads || 0,
+                lastUpdate: Date.now()
+            };
+            
+            // Update performance display
+            updatePerformanceDisplay();
+            
+            // Track performance history
+            performanceHistory.push({
+                timestamp: Date.now(),
+                pps: pps
+            });
+            
+            // Keep only recent history
+            const cutoff = Date.now() - 30000; // 30 seconds
+            performanceHistory = performanceHistory.filter(entry => entry.timestamp > cutoff);
+        }
+        
+        function updatePerformanceBadge(pps) {
+            if (pps >= 500) {
+                perfBadge.textContent = `${pps} PPS - EXCELLENT`;
+                perfBadge.style.background = 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)';
+            } else if (pps >= 100) {
+                perfBadge.textContent = `${pps} PPS - GOOD`;
+                perfBadge.style.background = 'linear-gradient(135deg, #ed8936 0%, #dd6b20 100%)';
+            } else if (pps >= 10) {
+                perfBadge.textContent = `${pps} PPS - MODERATE`;
+                perfBadge.style.background = 'linear-gradient(135deg, #ecc94b 0%, #d69e2e 100%)';
+            } else {
+                perfBadge.textContent = `${pps} PPS - LOW`;
+                perfBadge.style.background = 'linear-gradient(135deg, #e53e3e 0%, #c53030 100%)';
+            }
+        }
+        
+        function updatePacketPerformance() {
+            const avgPps = performanceHistory.length > 0 
+                ? performanceHistory.reduce((sum, entry) => sum + entry.pps, 0) / performanceHistory.length 
+                : 0;
+            
+            if (avgPps >= 400) {
+                packetPerformance.textContent = 'HIGH PERF';
+                packetPerformance.className = 'performance-indicator high';
+            } else if (avgPps >= 100) {
+                packetPerformance.textContent = 'GOOD PERF';
+                packetPerformance.className = 'performance-indicator medium';
+            } else {
+                packetPerformance.textContent = 'LOW PERF';
+                packetPerformance.className = 'performance-indicator low';
+            }
+        }
+        
+        function updateAlertPerformance() {
+            const recentAlerts = alertHistory.reduce((sum, entry) => sum + entry.count, 0);
+            
+            if (recentAlerts >= 10) {
+                alertPerformance.textContent = 'HIGH ACTIVITY';
+                alertPerformance.className = 'performance-indicator high';
+            } else if (recentAlerts >= 3) {
+                alertPerformance.textContent = 'MODERATE';
+                alertPerformance.className = 'performance-indicator medium';
+            } else {
+                alertPerformance.textContent = 'MONITORING';
+                alertPerformance.className = 'performance-indicator low';
+            }
+        }
+        
+        function animateCounter(element, from, to) {
+            if (from === to) return;
+            
+            const duration = 200;
+            const steps = 5;
+            const increment = (to - from) / steps;
+            let current = from;
+            let step = 0;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                element.textContent = Math.round(current);
+                step++;
+                
+                if (step >= steps) {
+                    element.textContent = to;
+                    clearInterval(timer);
+                }
+            }, duration / steps);
+        }
+        
+        function updatePerformanceDisplay(message = null) {
+            if (message) {
+                performanceStats.innerHTML = `<strong>Status:</strong> ${message}`;
+                return;
+            }
+            
+            const queueStatus = stats.queue > 1000 ? '⚠️ High' : stats.queue > 500 ? '📊 Medium' : '✅ Normal';
+            const dropRate = stats.packets > 0 ? ((stats.dropped / stats.packets) * 100).toFixed(1) : '0.0';
+            const avgPps = performanceHistory.length > 0 
+                ? (performanceHistory.reduce((sum, entry) => sum + entry.pps, 0) / performanceHistory.length).toFixed(0)
+                : '0';
+            
+            performanceStats.innerHTML = `
+                <strong>Performance:</strong> Queue: ${queueStatus} | 
+                Drop Rate: ${dropRate}% | 
+                Avg PPS: ${avgPps} | 
+                Threads: ${stats.processingThreads} | 
+                Total: ${stats.packets} packets, ${stats.alerts} alerts
+            `;
+        }
+        
+        function updateThreatLevel(newAlerts) {
+            const totalAlerts = stats.alerts;
+            const recentAlerts = alertHistory.reduce((sum, entry) => sum + entry.count, 0);
+            
+            let level = 'LOW';
+            let className = 'stat-number';
+            
+            if (totalAlerts >= 100 || recentAlerts >= 20 || newAlerts >= 10) {
+                level = 'CRITICAL';
+                className = 'stat-number alert-stat';
+            } else if (totalAlerts >= 50 || recentAlerts >= 10 || newAlerts >= 5) {
+                level = 'HIGH';
+                className = 'stat-number alert-stat';
+            } else if (totalAlerts >= 20 || recentAlerts >= 5 || newAlerts >= 2) {
+                level = 'MEDIUM';
+                className = 'stat-number';
+            }
+            
+            threatLevel.textContent = level;
+            threatLevel.className = className;
+        }
+        
+        function showAlertNotification(alert) {
+            notificationMessage.textContent = `${alert.rule_name}: ${alert.src_ip} → ${alert.dst_ip}`;
+            alertNotification.classList.add('show');
+            
+            // Enhanced sound for attack detection
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 1000;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.4);
+            } catch (error) {
+                console.log('Audio not available');
+            }
+            
+            setTimeout(() => {
+                alertNotification.classList.remove('show');
+            }, 4000);
+        }
+        
+        function getProtocolClass(protocol) {
+            switch (protocol.toLowerCase()) {
+                case 'tcp': return 'protocol-tcp';
+                case 'udp': return 'protocol-udp';
+                case 'icmp': return 'protocol-icmp';
+                default: return 'protocol-other';
+            }
+        }
+        
+        async function loadInterfaces() {
+            try {
+                const response = await fetch('/interfaces');
+                const interfaces = await response.json();
+                
+                interfaceSelect.innerHTML = '<option value="">Select an interface...</option>';
+                
+                interfaces.forEach(iface => {
+                    const option = document.createElement('option');
+                    option.value = iface.ip;
+                    option.textContent = `${iface.name} (${iface.ip})`;
+                    interfaceSelect.appendChild(option);
+                });
+                
+                console.log(`✅ Loaded ${interfaces.length} interfaces for high-performance capture`);
+                
+            } catch (error) {
+                console.error('❌ Failed to load interfaces:', error);
+                interfaceSelect.innerHTML = '<option value="">Failed to load interfaces</option>';
+            }
+        }
+        
+        async function startCapture() {
+            const interfaceIp = interfaceSelect.value;
+            if (!interfaceIp) {
+                alert('Please select a network interface');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/start_capture', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ interface_ip: interfaceIp })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    isCapturing = true;
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    interfaceSelect.disabled = true;
+                    statusDot.classList.add('active');
+                    statusText.textContent = 'High-performance IDS monitoring active - Attack detection enabled';
+                    
+                    // Start session timer
+                    sessionStartTime = new Date();
+                    sessionTimer = setInterval(updateSessionTime, 1000);
+                    
+                    // Clear displays
+                    clearDisplays();
+                    
+                    console.log('✅ High-performance capture started - Ready for attack testing');
+                    updatePerformanceDisplay('High-performance monitoring started - Optimized for attack detection');
+                } else {
+                    alert('Failed to start capture: ' + data.message);
+                }
+            } catch (error) {
+                console.error('❌ Error starting capture:', error);
+                alert('Error starting capture: ' + error.message);
+            }
+        }
+        
+        async function stopCapture() {
+            try {
+                const response = await fetch('/stop_capture', { method: 'POST' });
+                const data = await response.json();
+                
+                isCapturing = false;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                interfaceSelect.disabled = false;
+                statusDot.classList.remove('active');
+                statusText.textContent = 'High-performance IDS stopped';
+                
+                if (sessionTimer) {
+                    clearInterval(sessionTimer);
+                    sessionTimer = null;
+                }
+                
+                console.log('✅ High-performance capture stopped');
+                updatePerformanceDisplay('High-performance monitoring stopped');
+            } catch (error) {
+                console.error('❌ Error stopping capture:', error);
+            }
+        }
+        
+        function updateSessionTime() {
+            if (!sessionStartTime) return;
+            
+            const now = new Date();
+            const diff = Math.floor((now - sessionStartTime) / 1000);
+            const hours = Math.floor(diff / 3600).toString().padStart(2, '0');
+            const minutes = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+            const seconds = (diff % 60).toString().padStart(2, '0');
+            
+            sessionTime.textContent = `Session: ${hours}:${minutes}:${seconds}`;
+        }
+        
+        function clearDisplays() {
+            packetsList.innerHTML = '<div class="loading-indicator">Starting high-performance capture...</div>';
+            alertsList.innerHTML = '<div class="loading-indicator">Attack detection monitoring...</div>';
+            
+            displayedPackets = 0;
+            displayedAlerts = 0;
+            performanceHistory = [];
+            alertHistory = [];
+            
+            // Reset stats
+            stats = {
+                packets: 0,
+                alerts: 0,
+                dropped: 0,
+                queue: 0,
+                packetsPerSecond: 0,
+                processingThreads: 0,
+                lastUpdate: Date.now()
+            };
+            
+            // Reset UI
+            packetCount.textContent = '0';
+            alertCount.textContent = '0';
+            droppedCount.textContent = '0';
+            queueSize.textContent = '0';
+            processingThreads.textContent = '0';
+            packetRate.textContent = '0';
+            threatLevel.textContent = 'LOW';
+            threatLevel.className = 'stat-number';
+            alertRate.textContent = '0/min';
+            packetThroughput.textContent = '0 PPS';
+            perfBadge.textContent = 'READY';
+            packetPerformance.textContent = 'READY';
+            alertPerformance.textContent = 'READY';
+        }
+        
+        console.log('✅ High-Performance JavaScript initialization complete');
+    </script>
+</body>
+</html>
