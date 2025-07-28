@@ -2,6 +2,7 @@
 """
 High-Performance Enhanced Intrusion Detection System 
 Optimized for 500+ packets/second with working attack detection
+FIXED: Corrected false positive detection for DDoS attacks.
 """
 
 # Core imports
@@ -173,14 +174,15 @@ class HighPerformancePortScanRule(IDSRule):
             del self.port_attempts[ip]
 
 class HighPerformanceDDoSDetectionRule(IDSRule):
-    """DDoS detection optimized for attack testing"""
+    """DDoS detection optimized for attack testing - FIX: More specific to avoid false positives"""
     def __init__(self):
         super().__init__(
             name="DDoS Attack Detected",
-            description="High volume traffic from single source",
+            description="High volume traffic from a single source to a single destination",
             severity="High"
         )
-        self.packet_counts = defaultdict(deque)
+        # FIX: Track packets per source AND destination to be more specific
+        self.packet_counts = defaultdict(lambda: defaultdict(deque))
         self.time_window = 30  # Shorter window for faster detection
         self.threshold = 100   # MUCH LOWER threshold for testing
         self.cleanup_interval = 20
@@ -191,10 +193,11 @@ class HighPerformanceDDoSDetectionRule(IDSRule):
     
     def check(self, packet_info, raw_data=None):
         src_ip = packet_info.get('src_ip')
+        dst_ip = packet_info.get('dst_ip') # FIX: Get destination IP
         current_time = time.time()
         
         # REMOVED whitelist checking - detect everything
-        if not src_ip:
+        if not src_ip or not dst_ip:
             return False
         
         # Only skip actual localhost
@@ -206,8 +209,8 @@ class HighPerformanceDDoSDetectionRule(IDSRule):
             self._cleanup_old_entries(current_time)
             self.last_cleanup = current_time
         
-        # Track packets with deque
-        timestamps = self.packet_counts[src_ip]
+        # FIX: Track packets per source-destination pair
+        timestamps = self.packet_counts[src_ip][dst_ip]
         timestamps.append(current_time)
         
         # Keep only recent timestamps
@@ -217,23 +220,32 @@ class HighPerformanceDDoSDetectionRule(IDSRule):
         # Check threshold - MUCH more sensitive
         packet_count = len(timestamps)
         if packet_count >= self.threshold:
-            print(f"🚨 DDoS detected: {src_ip} sent {packet_count} packets in {self.time_window}s")
+            # FIX: More descriptive log message
+            print(f"🚨 DDoS detected: {src_ip} sent {packet_count} packets to {dst_ip} in {self.time_window}s")
             return True
         
         return False
     
     def _cleanup_old_entries(self, current_time):
-        """Cleanup old entries"""
-        to_remove = []
-        for src_ip, timestamps in self.packet_counts.items():
-            while timestamps and current_time - timestamps[0] > self.time_window:
-                timestamps.popleft()
+        """FIX: Cleanup old entries for the nested dictionary"""
+        to_remove_src = []
+        for src_ip, dst_map in self.packet_counts.items():
+            to_remove_dst = []
+            for dst_ip, timestamps in dst_map.items():
+                while timestamps and current_time - timestamps[0] > self.time_window:
+                    timestamps.popleft()
+                if not timestamps:
+                    to_remove_dst.append(dst_ip)
             
-            if not timestamps:
-                to_remove.append(src_ip)
+            for dst_ip in to_remove_dst:
+                del dst_map[dst_ip]
+                
+            if not dst_map:
+                to_remove_src.append(src_ip)
         
-        for ip in to_remove:
+        for ip in to_remove_src:
             del self.packet_counts[ip]
+
 
 class HighPerformanceBruteForceRule(IDSRule):
     """Brute force detection optimized for testing"""
@@ -952,7 +964,7 @@ def handle_disconnect():
 
 if __name__ == '__main__':
     print("=" * 70)
-    print("🛡️  HIGH-PERFORMANCE INTRUSION DETECTION SYSTEM")
+    print("🛡️  HIGH-PERFORMANCE INTRUSION DETECTION SYSTEM (FIXED)")
     print("=" * 70)
     print("Performance Optimizations:")
     print("• Target: 500+ packets/second processing")
@@ -961,6 +973,7 @@ if __name__ == '__main__':
     print("• Large batches and fast UI updates")
     print("• Reduced rate limiting for testing")
     print("Attack Detection Optimizations:")
+    print("• FIXED: DDoS rule is now more specific to avoid false positives")
     print("• REMOVED IP whitelisting (detects all external IPs)")
     print("• REDUCED detection thresholds for testing")
     print("• Enhanced logging for debugging")
