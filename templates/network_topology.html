@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Topology - IDS Visualization</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #4a5568;
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        .back-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+
+        .back-button:hover {
+            transform: translateY(-2px);
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #4a5568;
+            margin: 0;
+        }
+
+        .control-group input, .control-group select {
+            padding: 6px 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .stats {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #667eea;
+            display: block;
+        }
+
+        .stat-label {
+            color: #718096;
+            font-size: 0.8rem;
+            margin-top: 2px;
+        }
+
+        .threat-stat {
+            color: #e53e3e !important;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 20px;
+        }
+
+        .visualization-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            height: 600px;
+        }
+
+        .viz-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 20px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #48bb78;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        #networkViz {
+            width: 100%;
+            height: 548px;
+            background: #f8fafc;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .legend, .top-connections {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            padding: 10px 15px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .legend-content, .connections-content {
+            padding: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .legend-line {
+            width: 25px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        .connection-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.8rem;
+        }
+
+        .connection-item:last-child {
+            border-bottom: none;
+        }
+
+        .connection-ips {
+            font-family: 'Courier New', monospace;
+            color: #4a5568;
+            font-size: 0.75rem;
+        }
+
+        .connection-count {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .threat-connection {
+            background: rgba(229, 62, 62, 0.1);
+            border-radius: 3px;
+            padding: 3px 6px;
+            margin: -3px -6px;
+        }
+
+        .threat-connection .connection-ips {
+            color: #e53e3e;
+        }
+
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                flex-direction: row;
+            }
+            
+            .legend, .top-connections {
+                flex: 1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .control-group {
+                justify-content: space-between;
+            }
+            
+            .stats {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Network Topology Visualization</h1>
+            <a href="/" class="back-button">← Back to IDS Dashboard</a>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="maxNodes">Max Nodes:</label>
+                <select id="maxNodes">
+                    <option value="10">10</option>
+                    <option value="15" selected>15</option>
+                    <option value="20">20</option>
+                    <option value="25">25</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="updateRate">Update Rate:</label>
+                <select id="updateRate">
+                    <option value="2000" selected>2s</option>
+                    <option value="5000">5s</option>
+                    <option value="10000">10s</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="showLabels" checked> Show Labels
+                </label>
+            </div>
+            <div class="control-group">
+                <button onclick="manualCleanup()" style="padding: 6px 12px; background: #ed8936; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    🧹 Cleanup
+                </button>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <span class="stat-number" id="nodeCount">0</span>
+                <div class="stat-label">Active Nodes</div>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="edgeCount">0</span>
+                <div class="stat-label">Connections</div>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number threat-stat" id="threatCount">0</span>
+                <div class="stat-label">Threats</div>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="totalNodes">0</span>
+                <div class="stat-label">Total Nodes</div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="visualization-container">
+                <div class="viz-header">
+                    🌐 Live Network Map
+                    <div class="status-indicator">
+                        <div class="status-dot"></div>
+                        <span id="vizStatus">Initializing...</span>
+                    </div>
+                </div>
+                <div id="networkViz"></div>
+            </div>
+
+            <div class="sidebar">
+                <div class="legend">
+                    <div class="sidebar-header">🎨 Legend</div>
+                    <div class="legend-content">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #48bb78;"></div>
+                            <span>Normal Traffic</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #ed8936;"></div>
+                            <span>High Activity</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #e53e3e;"></div>
+                            <span>Threat Detected</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-line" style="background: #cbd5e0; height: 2px;"></div>
+                            <span>Low Traffic</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-line" style="background: #667eea; height: 4px;"></div>
+                            <span>Medium Traffic</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-line" style="background: #e53e3e; height: 6px;"></div>
+                            <span>High Traffic</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="top-connections">
+                    <div class="sidebar-header">📊 Top Connections</div>
+                    <div class="connections-content" id="topConnections">
+                        <div style="text-align: center; color: #718096; padding: 20px; font-size: 0.8rem;">
+                            No connections yet...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('🌐 Network Topology Visualization starting...');
+
+        // Initialize Socket.IO connection
+        const socket = io();
+
+        // Network data structures
+        let network = null;
+        let networkData = { nodes: new vis.DataSet(), edges: new vis.DataSet() };
+        let config = {
+            maxNodes: 15,
+            updateRate: 2000,
+            showLabels: true
+        };
+
+        // Network visualization options
+        const networkOptions = {
+            nodes: {
+                shape: 'dot',
+                size: 20,
+                font: {
+                    size: 11,
+                    color: '#2d3748',
+                    background: 'rgba(255, 255, 255, 0.8)',
+                    strokeWidth: 1,
+                    strokeColor: '#e2e8f0'
+                },
+                borderWidth: 2,
+                shadow: {
+                    enabled: true,
+                    color: 'rgba(0, 0, 0, 0.15)',
+                    size: 3,
+                    x: 1,
+                    y: 1
+                }
+            },
+            edges: {
+                width: 2,
+                color: { inherit: false },
+                smooth: {
+                    enabled: true,
+                    type: 'continuous',
+                    roundness: 0.2
+                },
+                arrows: {
+                    to: {
+                        enabled: true,
+                        scaleFactor: 0.7
+                    }
+                }
+            },
+            physics: {
+                enabled: true,
+                stabilization: { iterations: 150 },
+                barnesHut: {
+                    gravitationalConstant: -1500,
+                    centralGravity: 0.1,
+                    springLength: 150,
+                    springConstant: 0.04,
+                    damping: 0.09
+                }
+            },
+            interaction: {
+                hover: true,
+                selectConnectedEdges: false,
+                tooltipDelay: 300
+            }
+        };
+
+        // Initialize network visualization
+        function initializeNetwork() {
+            const container = document.getElementById('networkViz');
+            network = new vis.Network(container, networkData, networkOptions);
+
+            network.on('click', function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    console.log('Node clicked:', nodeId);
+                }
+            });
+
+            console.log('✅ Network visualization initialized');
+            updateStatus('Connected - Waiting for data...');
+        }
+
+        // Socket event handlers
+        socket.on('connected', function(data) {
+            console.log('✅ Connected to IDS server');
+            updateStatus('Connected to IDS');
+        });
+
+        socket.on('topology_update', function(data) {
+            updateVisualization(data);
+        });
+
+        // Update visualization with new data
+        function updateVisualization(data) {
+            if (!data) return;
+
+            // Update nodes
+            if (data.nodes) {
+                const visNodes = data.nodes.slice(0, config.maxNodes).map(node => {
+                    const size = Math.max(15, Math.min(40, 15 + (node.packet_count / 20)));
+                    let color = '#48bb78'; // Green for normal
+                    
+                    if (node.is_threat) {
+                        color = '#e53e3e'; // Red for threats
+                    } else if (node.packet_count > 100) {
+                        color = '#ed8936'; // Orange for high activity
+                    }
+
+                    return {
+                        id: node.id,
+                        label: config.showLabels ? node.id : '',
+                        color: {
+                            background: color,
+                            border: node.is_threat ? '#c53030' : '#2d3748'
+                        },
+                        size: size,
+                        title: `IP: ${node.id}\nPackets: ${node.packet_count}\nConnections: ${node.connections}\nStatus: ${node.is_threat ? 'THREAT' : 'Normal'}`
+                    };
+                });
+
+                networkData.nodes.clear();
+                networkData.nodes.add(visNodes);
+            }
+
+            // Update edges
+            if (data.edges) {
+                const visEdges = data.edges.map(edge => {
+                    const width = Math.max(1, Math.min(6, edge.packet_count / 10));
+                    let color = '#cbd5e0'; // Light gray for low traffic
+                    
+                    if (edge.packet_count > 100) {
+                        color = '#e53e3e'; // Red for high traffic
+                    } else if (edge.packet_count > 30) {
+                        color = '#667eea'; // Blue for medium traffic
+                    }
+
+                    return {
+                        id: edge.id,
+                        from: edge.from,
+                        to: edge.to,
+                        width: width,
+                        color: {
+                            color: color,
+                            opacity: 0.7
+                        },
+                        title: `${edge.from} → ${edge.to}\nPackets: ${edge.packet_count}`
+                    };
+                });
+
+                networkData.edges.clear();
+                networkData.edges.add(visEdges);
+            }
+
+            // Update statistics
+            if (data.stats) {
+                document.getElementById('nodeCount').textContent = data.nodes ? data.nodes.length : 0;
+                document.getElementById('edgeCount').textContent = data.edges ? data.edges.length : 0;
+                document.getElementById('threatCount').textContent = data.stats.threat_count || 0;
+                document.getElementById('totalNodes').textContent = data.stats.total_nodes || 0;
+            }
+
+            // Update top connections
+            if (data.top_connections) {
+                updateTopConnections(data.top_connections);
+            }
+
+            updateStatus(`Active - ${data.nodes ? data.nodes.length : 0} nodes displayed`);
+        }
+
+        // Update top connections display
+        function updateTopConnections(connections) {
+            const container = document.getElementById('topConnections');
+            
+            if (!connections || connections.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #718096; padding: 20px; font-size: 0.8rem;">No connections yet...</div>';
+                return;
+            }
+
+            container.innerHTML = connections.map(conn => {
+                const className = conn.is_threat ? 'connection-item threat-connection' : 'connection-item';
+                
+                return `
+                    <div class="${className}">
+                        <div class="connection-ips">${conn.ips}</div>
+                        <div class="connection-count">${conn.count}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Update status display
+        function updateStatus(status) {
+            document.getElementById('vizStatus').textContent = status;
+        }
+
+        // Load topology data from API
+        function loadTopologyData() {
+            fetch('/api/topology/data')
+                .then(response => response.json())
+                .then(data => {
+                    updateVisualization(data);
+                })
+                .catch(error => {
+                    console.error('Error loading topology data:', error);
+                    updateStatus('Error loading data');
+                });
+        }
+
+        // Manual cleanup function
+        function manualCleanup() {
+            fetch('/api/topology/cleanup', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Cleanup completed:', data);
+                    loadTopologyData(); // Refresh data
+                })
+                .catch(error => console.error('Cleanup error:', error));
+        }
+
+        // Configuration event handlers
+        document.getElementById('maxNodes').addEventListener('change', (e) => {
+            config.maxNodes = parseInt(e.target.value);
+            
+            // Update server configuration
+            fetch('/api/topology/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ max_nodes: config.maxNodes })
+            }).then(response => response.json())
+              .then(data => console.log('Config updated:', data));
+            
+            loadTopologyData(); // Refresh with new limit
+        });
+
+        document.getElementById('updateRate').addEventListener('change', (e) => {
+            config.updateRate = parseInt(e.target.value);
+            
+            // Restart update interval
+            clearInterval(updateInterval);
+            updateInterval = setInterval(loadTopologyData, config.updateRate);
+        });
+
+        document.getElementById('showLabels').addEventListener('change', (e) => {
+            config.showLabels = e.target.checked;
+            loadTopologyData(); // Refresh to update labels
+        });
+
+        // Main update loop
+        let updateInterval = setInterval(loadTopologyData, config.updateRate);
+
+        // Initialize everything when page loads
+        window.addEventListener('load', function() {
+            initializeNetwork();
+            
+            // Load initial data
+            loadTopologyData();
+            
+            // Subscribe to real-time updates via WebSocket
+            socket.emit('topology_subscribe');
+            
+            console.log('✅ Network Topology Visualization ready');
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+
+        console.log('✅ Network Topology JavaScript loaded');
+    </script>
+</body>
+</html>

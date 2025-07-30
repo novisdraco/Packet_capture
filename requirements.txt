@@ -1,0 +1,72 @@
+# Enhanced IDS with Network Topology Visualization - Core Dependencies
+
+# Web Framework and Real-time Communication
+Flask>=2.0.0
+Flask-SocketIO>=5.0.0
+python-socketio>=5.0.0
+python-engineio>=4.0.0
+eventlet>=0.30.0
+
+# System Monitoring and Network Operations
+psutil>=5.8.0
+
+# Data Processing and Analysis
+numpy>=1.20.0
+
+# HTTP Requests (for testing and integration)
+requests>=2.25.0
+urllib3>=1.26.0
+
+# Optional: YARA Integration for Advanced Threat Detection
+# Uncomment the following line if you want YARA support:
+# yara-python==4.3.1
+
+# Development and Testing (Optional)
+# Uncomment if you want development tools:
+# pytest==7.4.0
+# pytest-cov==4.1.0
+# black==23.7.0
+# flake8==6.0.0
+
+# Note: The following modules are built into Python and don't need installation:
+# - ipaddress (IP address handling)
+# - socket (network operations)  
+# - struct (binary data handling)
+# - threading (concurrent processing)
+# - queue (thread-safe queues)
+# - collections (deque, defaultdict)
+# - datetime, time (date/time handling)
+# - json (JSON serialization)
+# - logging (logging framework)
+# - typing (type hints)
+
+# Browser-based dependencies (included via CDN, no pip installation needed):
+# - D3.js v7.8.5 (network topology visualization)
+# - Socket.IO client v4.0.1 (real-time communication)
+
+# Installation Instructions:
+# 1. Install core dependencies:
+#    pip install -r requirements.txt
+#
+# 2. For YARA support (advanced threat detection):
+#    pip install yara-python==4.3.1
+#
+# 3. For development tools:
+#    Uncomment the development dependencies above and reinstall
+
+# Platform Notes:
+# - Windows: May require Microsoft Visual C++ Build Tools for some packages
+# - Linux: May need sudo privileges for packet capture (run with sudo)
+# - macOS: May need sudo privileges for packet capture (run with sudo)
+
+# Performance Notes:
+# - eventlet provides high-performance async networking
+# - psutil enables efficient system resource monitoring  
+# - numpy optimizes numerical computations for network analysis
+# - Built-in collections.deque provides O(1) append/pop operations
+# - Threading enables concurrent packet processing
+
+# Security Notes:
+# - All dependencies are from official PyPI with pinned versions
+# - No external network dependencies required for core functionality
+# - Raw socket operations require elevated privileges (Administrator/sudo)

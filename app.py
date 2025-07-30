@@ -21,6 +21,147 @@ import queue
 from collections import deque, defaultdict
 import logging
 
+
+
+# Add these imports for network topology
+from collections import defaultdict
+import json
+import threading
+import time
+
+# Global network topology data structures
+network_topology = {
+    'nodes': defaultdict(lambda: {
+        'packet_count': 0,
+        'connections': set(),
+        'is_threat': False,
+        'first_seen': None,
+        'last_seen': None
+    }),
+    'edges': defaultdict(lambda: {
+        'packet_count': 0,
+        'first_seen': None,
+        'last_seen': None
+    }),
+    'connection_stats': defaultdict(int),
+    'threat_ips': set(),
+    'cleanup_interval': 30,
+    'max_nodes': 20
+}
+
+topology_lock = threading.Lock()
+
+def update_network_topology(packet_info):
+    """Update network topology with new packet information"""
+    src_ip = packet_info.get('src_ip')
+    dst_ip = packet_info.get('dst_ip')
+    
+    if not src_ip or not dst_ip or src_ip == dst_ip:
+        return
+    
+    current_time = time.time()
+    
+    with topology_lock:
+        # Update source node
+        if network_topology['nodes'][src_ip]['first_seen'] is None:
+            network_topology['nodes'][src_ip]['first_seen'] = current_time
+        
+        network_topology['nodes'][src_ip]['packet_count'] += 1
+        network_topology['nodes'][src_ip]['last_seen'] = current_time
+        network_topology['nodes'][src_ip]['connections'].add(dst_ip)
+        
+        # Update destination node
+        if network_topology['nodes'][dst_ip]['first_seen'] is None:
+            network_topology['nodes'][dst_ip]['first_seen'] = current_time
+        
+        network_topology['nodes'][dst_ip]['packet_count'] += 1
+        network_topology['nodes'][dst_ip]['last_seen'] = current_time
+        network_topology['nodes'][dst_ip]['connections'].add(src_ip)
+        
+        # Update edge
+        edge_key = f"{src_ip}->{dst_ip}"
+        if network_topology['edges'][edge_key]['first_seen'] is None:
+            network_topology['edges'][edge_key]['first_seen'] = current_time
+        
+        network_topology['edges'][edge_key]['packet_count'] += 1
+        network_topology['edges'][edge_key]['last_seen'] = current_time
+        
+        # Update connection stats
+        connection_key = tuple(sorted([src_ip, dst_ip]))
+        network_topology['connection_stats'][connection_key] += 1
+
+def mark_threat_ip(ip_address):
+    """Mark an IP address as a threat"""
+    with topology_lock:
+        network_topology['threat_ips'].add(ip_address)
+        if ip_address in network_topology['nodes']:
+            network_topology['nodes'][ip_address]['is_threat'] = True
+
+def get_network_topology_data():
+    """Get current network topology data for visualization"""
+    with topology_lock:
+        current_time = time.time()
+        cleanup_threshold = current_time - network_topology['cleanup_interval']
+        
+        # Get active nodes
+        active_nodes = []
+        for ip, node_data in network_topology['nodes'].items():
+            if node_data['last_seen'] > cleanup_threshold:
+                active_nodes.append({
+                    'id': ip,
+                    'packet_count': node_data['packet_count'],
+                    'connections': len(node_data['connections']),
+                    'is_threat': ip in network_topology['threat_ips'],
+                    'first_seen': node_data['first_seen'],
+                    'last_seen': node_data['last_seen']
+                })
+        
+        # Sort and limit
+        active_nodes.sort(key=lambda x: x['packet_count'], reverse=True)
+        top_nodes = active_nodes[:network_topology['max_nodes']]
+        top_node_ips = {node['id'] for node in top_nodes}
+        
+        # Get active edges
+        active_edges = []
+        for edge_key, edge_data in network_topology['edges'].items():
+            if edge_data['last_seen'] > cleanup_threshold:
+                src_ip, dst_ip = edge_key.split('->')
+                if src_ip in top_node_ips and dst_ip in top_node_ips:
+                    active_edges.append({
+                        'id': edge_key,
+                        'from': src_ip,
+                        'to': dst_ip,
+                        'packet_count': edge_data['packet_count'],
+                        'first_seen': edge_data['first_seen'],
+                        'last_seen': edge_data['last_seen']
+                    })
+        
+        # Get top connections
+        top_connections = []
+        for connection_key, count in network_topology['connection_stats'].items():
+            ip1, ip2 = connection_key
+            if ip1 in top_node_ips or ip2 in top_node_ips:
+                is_threat = ip1 in network_topology['threat_ips'] or ip2 in network_topology['threat_ips']
+                top_connections.append({
+                    'ips': f"{ip1} ↔ {ip2}",
+                    'count': count,
+                    'is_threat': is_threat
+                })
+        
+        top_connections.sort(key=lambda x: x['count'], reverse=True)
+        
+        return {
+            'nodes': top_nodes,
+            'edges': active_edges,
+            'top_connections': top_connections[:10],
+            'stats': {
+                'total_nodes': len(network_topology['nodes']),
+                'total_edges': len(network_topology['edges']),
+                'threat_count': len(network_topology['threat_ips']),
+                'active_nodes': len(active_nodes)
+            }
+        }
+
 # YARA integration (optional)
 try:
     from yara_ids import YARAEngine, YARAIDSRule, integrate_yara_into_ids, create_enhanced_alert
@@ -648,6 +789,9 @@ class HighPerformancePacketCapture:
                     socketio.emit('capture_error', {'error': str(e)})
                 break
     
+   
+
+    
     def _background_processor(self):
         """Background thread for high-speed packet processing"""
         while self.is_running:
@@ -657,6 +801,9 @@ class HighPerformancePacketCapture:
                 # IDS analysis
                 packet_alerts = self.ids_engine.analyze_packet(packet_info, raw_data)
                 
+                # ADD THIS LINE: Update network topology
+                update_network_topology(packet_info)
+                
                 # Add packet to display queue
                 captured_packets.append(packet_info)
                 
@@ -665,16 +812,29 @@ class HighPerformancePacketCapture:
                     alerts.append(alert)
                     self.packet_stats['total_alerts'] += 1
                     
+                    # ADD THESE LINES: Mark threat IPs
+                    if alert.get('src_ip'):
+                        mark_threat_ip(alert['src_ip'])
+                    if alert.get('dst_ip'):
+                        mark_threat_ip(alert['dst_ip'])
+                    
                     try:
                         alert_queue.put(alert, block=False)
                     except queue.Full:
-                        pass  # Skip if queue full
-                
+                        pass
+                    
             except queue.Empty:
                 continue
             except Exception as e:
                 if self.is_running:
                     print(f"Background processing error: {e}")
+
+
+
+
+
+
+    
     
     def _high_performance_ui_updater(self):
         """High-performance UI updater - 500+ pps capable"""
@@ -961,6 +1121,54 @@ def handle_disconnect():
 # =============================================================================
 # MAIN APPLICATION
 # =============================================================================
+
+@app.route('/topology')
+def topology_page():
+    """Serve the network topology visualization page"""
+    return render_template('network_topology.html')
+
+@app.route('/api/topology/data')
+def get_topology_data():
+    """Get current network topology data"""
+    return jsonify(get_network_topology_data())
+
+@app.route('/api/topology/config', methods=['POST'])
+def topology_config():
+    """Update topology configuration"""
+    data = request.get_json()
+    with topology_lock:
+        if 'max_nodes' in data:
+            network_topology['max_nodes'] = int(data['max_nodes'])
+    return jsonify({'success': True})
+
+@app.route('/api/topology/cleanup', methods=['POST'])
+def manual_topology_cleanup():
+    """Manually trigger topology cleanup"""
+    with topology_lock:
+        current_time = time.time()
+        cleanup_threshold = current_time - network_topology['cleanup_interval']
+        
+        # Remove old nodes
+        nodes_to_remove = [ip for ip, node_data in network_topology['nodes'].items() 
+                          if node_data['last_seen'] < cleanup_threshold]
+        for ip in nodes_to_remove:
+            del network_topology['nodes'][ip]
+            network_topology['threat_ips'].discard(ip)
+        
+        # Remove old edges  
+        edges_to_remove = [edge_key for edge_key, edge_data in network_topology['edges'].items()
+                          if edge_data['last_seen'] < cleanup_threshold]
+        for edge_key in edges_to_remove:
+            del network_topology['edges'][edge_key]
+    
+    return jsonify({'success': True, 'message': 'Cleanup completed'})
+
+@socketio.on('topology_subscribe')
+def handle_topology_subscription():
+    """Handle client subscription to topology updates"""
+    emit('topology_subscribed', {'message': 'Subscribed to topology updates'})
+
+
 
 if __name__ == '__main__':
     print("=" * 70)
