@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-DIAGNOSTIC High-Performance IDS with Enhanced Troubleshooting
-This version includes extensive diagnostics to identify packet capture issues
+High-Performance Enhanced Intrusion Detection System 
+Optimized for 500+ packets/second with working attack detection
+FIXED: Corrected false positive detection for DDoS attacks.
 """
 
 # Core imports
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import socket
 import struct
@@ -13,463 +14,762 @@ import threading
 import sys
 import psutil
 import ipaddress
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import time
 import queue
 from collections import deque, defaultdict
 import logging
-import subprocess
-import platform
-import os
 
-# Configure detailed logging
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('ids_debug.log')
-    ]
-)
+
+
+# Add these imports for network topology
+from collections import defaultdict
+import json
+import threading
+import time
+
+# Global network topology data structures
+network_topology = {
+    'nodes': defaultdict(lambda: {
+        'packet_count': 0,
+        'connections': set(),
+        'is_threat': False,
+        'first_seen': None,
+        'last_seen': None
+    }),
+    'edges': defaultdict(lambda: {
+        'packet_count': 0,
+        'first_seen': None,
+        'last_seen': None
+    }),
+    'connection_stats': defaultdict(int),
+    'threat_ips': set(),
+    'cleanup_interval': 30,
+    'max_nodes': 20
+}
+
+topology_lock = threading.Lock()
+
+def update_network_topology(packet_info):
+    """Update network topology with new packet information"""
+    src_ip = packet_info.get('src_ip')
+    dst_ip = packet_info.get('dst_ip')
+    
+    if not src_ip or not dst_ip or src_ip == dst_ip:
+        return
+    
+    current_time = time.time()
+    
+    with topology_lock:
+        # Update source node
+        if network_topology['nodes'][src_ip]['first_seen'] is None:
+            network_topology['nodes'][src_ip]['first_seen'] = current_time
+        
+        network_topology['nodes'][src_ip]['packet_count'] += 1
+        network_topology['nodes'][src_ip]['last_seen'] = current_time
+        network_topology['nodes'][src_ip]['connections'].add(dst_ip)
+        
+        # Update destination node
+        if network_topology['nodes'][dst_ip]['first_seen'] is None:
+            network_topology['nodes'][dst_ip]['first_seen'] = current_time
+        
+        network_topology['nodes'][dst_ip]['packet_count'] += 1
+        network_topology['nodes'][dst_ip]['last_seen'] = current_time
+        network_topology['nodes'][dst_ip]['connections'].add(src_ip)
+        
+        # Update edge
+        edge_key = f"{src_ip}->{dst_ip}"
+        if network_topology['edges'][edge_key]['first_seen'] is None:
+            network_topology['edges'][edge_key]['first_seen'] = current_time
+        
+        network_topology['edges'][edge_key]['packet_count'] += 1
+        network_topology['edges'][edge_key]['last_seen'] = current_time
+        
+        # Update connection stats
+        connection_key = tuple(sorted([src_ip, dst_ip]))
+        network_topology['connection_stats'][connection_key] += 1
+
+def mark_threat_ip(ip_address):
+    """Mark an IP address as a threat"""
+    with topology_lock:
+        network_topology['threat_ips'].add(ip_address)
+        if ip_address in network_topology['nodes']:
+            network_topology['nodes'][ip_address]['is_threat'] = True
+
+
+
+
+
+# Replace the get_network_topology_data function with this fixed version:
+
+def get_network_topology_data():
+    """Get current network topology data for visualization"""
+    with topology_lock:
+        current_time = time.time()
+        cleanup_threshold = current_time - network_topology['cleanup_interval']
+        
+        # Get active nodes - FIX: Check for None values
+        active_nodes = []
+        for ip, node_data in network_topology['nodes'].items():
+            last_seen = node_data.get('last_seen')
+            if last_seen and last_seen > cleanup_threshold:
+                active_nodes.append({
+                    'id': ip,
+                    'packet_count': node_data.get('packet_count', 0),
+                    'connections': len(node_data.get('connections', set())),
+                    'is_threat': ip in network_topology['threat_ips'],
+                    'first_seen': node_data.get('first_seen'),
+                    'last_seen': last_seen
+                })
+        
+        # Sort and limit
+        active_nodes.sort(key=lambda x: x['packet_count'], reverse=True)
+        top_nodes = active_nodes[:network_topology['max_nodes']]
+        top_node_ips = {node['id'] for node in top_nodes}
+        
+        # Get active edges - FIX: Check for None values
+        active_edges = []
+        for edge_key, edge_data in network_topology['edges'].items():
+            last_seen = edge_data.get('last_seen')
+            if last_seen and last_seen > cleanup_threshold:
+                try:
+                    src_ip, dst_ip = edge_key.split('->', 1)  # Use maxsplit=1 for safety
+                    if src_ip in top_node_ips and dst_ip in top_node_ips:
+                        active_edges.append({
+                            'id': edge_key,
+                            'from': src_ip,
+                            'to': dst_ip,
+                            'packet_count': edge_data.get('packet_count', 0),
+                            'first_seen': edge_data.get('first_seen'),
+                            'last_seen': last_seen
+                        })
+                except ValueError:
+                    # Skip malformed edge keys
+                    continue
+        
+        # Get top connections
+        top_connections = []
+        for connection_key, count in network_topology['connection_stats'].items():
+            if len(connection_key) >= 2:  # Safety check
+                ip1, ip2 = connection_key[0], connection_key[1]
+                if ip1 in top_node_ips or ip2 in top_node_ips:
+                    is_threat = ip1 in network_topology['threat_ips'] or ip2 in network_topology['threat_ips']
+                    top_connections.append({
+                        'ips': f"{ip1} ↔ {ip2}",
+                        'count': count,
+                        'is_threat': is_threat
+                    })
+        
+        top_connections.sort(key=lambda x: x['count'], reverse=True)
+        
+        return {
+            'nodes': top_nodes,
+            'edges': active_edges,
+            'top_connections': top_connections[:10],
+            'stats': {
+                'total_nodes': len(network_topology['nodes']),
+                'total_edges': len(network_topology['edges']),
+                'threat_count': len(network_topology['threat_ips']),
+                'active_nodes': len(active_nodes)
+            }
+        }
+
+# YARA integration (optional)
+try:
+    from yara_ids import YARAEngine, YARAIDSRule, integrate_yara_into_ids, create_enhanced_alert
+    YARA_AVAILABLE = True
+    print("✅ YARA integration loaded successfully")
+except ImportError as e:
+    print(f"⚠️  YARA not available: {e}")
+    print("💡 Install YARA: pip install yara-python")
+    YARA_AVAILABLE = False
+
+# Flask application setup
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'enhanced_ids_security_key_2024'
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# Configure logging
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# DIAGNOSTIC FUNCTIONS
-# =============================================================================
+# OPTIMIZED CONFIG FOR HIGH PERFORMANCE
+CONFIG = {
+    'max_packets': 1000,       # Increased buffer
+    'max_alerts': 200,         # More alerts
+    'environment': 'testing',  # Testing mode - more sensitive
+    'debug_mode': False,
+    'batch_size': 50,          # Larger batches for performance
+    'update_interval': 0.1,    # Faster updates (10x per second)
+    'max_memory_mb': 200,
+    'cleanup_interval': 60     # Less frequent cleanup
+}
 
-def check_system_requirements():
-    """Check system requirements and permissions"""
-    issues = []
-    solutions = []
-    
-    # Check if running as admin/root
-    try:
-        if platform.system() == "Windows":
-            import ctypes
-            is_admin = ctypes.windll.shell32.IsUserAnAdmin()
-            if not is_admin:
-                issues.append("❌ Not running as Administrator")
-                solutions.append("💡 Right-click and 'Run as Administrator'")
-        else:
-            if os.geteuid() != 0:
-                issues.append("❌ Not running as root")
-                solutions.append("💡 Run with: sudo python3 script.py")
-    except Exception as e:
-        issues.append(f"❌ Permission check failed: {e}")
-    
-    # Check raw socket support
-    try:
-        test_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-        test_socket.close()
-        logger.info("✅ Raw socket creation successful")
-    except PermissionError:
-        issues.append("❌ No permission for raw sockets")
-        solutions.append("💡 Run as Administrator/root")
-    except Exception as e:
-        issues.append(f"❌ Raw socket test failed: {e}")
-    
-    # Check network interfaces
-    try:
-        interfaces = psutil.net_if_addrs()
-        active_interfaces = []
-        for name, addrs in interfaces.items():
-            for addr in addrs:
-                if addr.family == socket.AF_INET and not addr.address.startswith('127.'):
-                    active_interfaces.append((name, addr.address))
-        
-        if active_interfaces:
-            logger.info(f"✅ Found {len(active_interfaces)} network interfaces")
-            for name, ip in active_interfaces[:3]:  # Show first 3
-                logger.info(f"   📡 {name}: {ip}")
-        else:
-            issues.append("❌ No suitable network interfaces found")
-            solutions.append("💡 Check network connection")
-    except Exception as e:
-        issues.append(f"❌ Interface enumeration failed: {e}")
-    
-    return issues, solutions
+# Global variables with thread-safe collections
+capture_thread = None
+is_capturing = False
+captured_packets = deque(maxlen=CONFIG['max_packets'])
+alerts = deque(maxlen=CONFIG['max_alerts'])
+packet_stats = defaultdict(int)
 
-def test_packet_capture_capability(interface_ip):
-    """Test if we can actually capture packets on the interface"""
-    test_results = []
-    
-    try:
-        # Test 1: Can we create a raw socket?
-        logger.info(f"🔍 Testing packet capture on {interface_ip}...")
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IP)
-        test_results.append("✅ Raw socket created successfully")
-        
-        # Test 2: Can we bind to the interface?
-        try:
-            sock.bind((interface_ip, 0))
-            test_results.append(f"✅ Successfully bound to {interface_ip}")
-        except Exception as e:
-            test_results.append(f"❌ Bind failed: {e}")
-            sock.close()
-            return test_results
-        
-        # Test 3: Can we set socket options?
-        try:
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-            test_results.append("✅ IP_HDRINCL option set")
-        except Exception as e:
-            test_results.append(f"❌ Socket option failed: {e}")
-        
-        # Test 4: Windows promiscuous mode
-        if platform.system() == "Windows":
-            try:
-                sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
-                test_results.append("✅ Windows promiscuous mode enabled")
-                sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_OFF)
-            except Exception as e:
-                test_results.append(f"⚠️ Promiscuous mode failed: {e}")
-        
-        # Test 5: Can we receive data? (timeout test)
-        try:
-            sock.settimeout(2.0)  # 2 second timeout
-            logger.info("🔍 Testing packet reception (2 second timeout)...")
-            data, addr = sock.recvfrom(1024)
-            test_results.append(f"✅ Received packet: {len(data)} bytes from {addr}")
-        except socket.timeout:
-            test_results.append("⚠️ No packets received in 2 seconds (might be normal)")
-        except Exception as e:
-            test_results.append(f"❌ Packet reception failed: {e}")
-        
-        sock.close()
-        
-    except Exception as e:
-        test_results.append(f"❌ Capture test failed: {e}")
-    
-    return test_results
+# High-performance queues
+packet_queue = queue.Queue(maxsize=2000)  # Larger queue
+alert_queue = queue.Queue(maxsize=1000)   # Larger alert queue
+
+# Rate limiting - reduced for testing
+last_ui_update = 0
+update_lock = threading.Lock()
 
 # =============================================================================
-# SIMPLIFIED TOPOLOGY TRACKER
+# HIGH-PERFORMANCE BASE CLASSES
 # =============================================================================
 
-class SimpleNetworkHost:
-    def __init__(self, ip_address: str):
-        self.ip_address = ip_address
-        self.first_seen = datetime.now()
-        self.last_seen = datetime.now()
-        self.packet_count = 0
-        self.host_type = self._classify_host(ip_address)
-        self.is_internal = self._is_internal_ip(ip_address)
-        self.activity_level = 'low'
-        self.threat_level = 0
-        self.alert_count = 0
-        self.lock = threading.Lock()
+class IDSRule:
+    """Base class for all IDS detection rules - high performance"""
+    def __init__(self, name, description, severity="Medium"):
+        self.name = name
+        self.description = description
+        self.severity = severity
+        self.enabled = True
+        self.trigger_count = 0
+        self.last_triggered = None
+        # REDUCED rate limiting for testing
+        self.rate_limit = 20  # More triggers allowed per minute
+        self.trigger_times = deque(maxlen=30)
     
-    def _classify_host(self, ip_address: str) -> str:
-        try:
-            ip_obj = ipaddress.ip_address(ip_address)
-            if ip_obj.is_loopback:
-                return 'localhost'
-            elif ip_obj.is_private:
-                if ip_address.endswith('.1'):
-                    return 'router'
-                else:
-                    return 'internal'
+    def check(self, packet_info, raw_data=None):
+        """Override this method in rule implementations"""
+        return False
+    
+    def trigger(self):
+        """Mark rule as triggered with minimal rate limiting"""
+        current_time = time.time()
+        
+        # Relaxed rate limiting for testing
+        recent_triggers = [t for t in self.trigger_times if current_time - t < 60]
+        if len(recent_triggers) >= self.rate_limit:
+            # Allow occasional bypass for testing
+            if self.trigger_count % 10 == 0:
+                pass  # Allow every 10th trigger even if rate limited
             else:
-                return 'external'
-        except:
-            return 'unknown'
-    
-    def _is_internal_ip(self, ip_address: str) -> bool:
-        try:
-            ip_obj = ipaddress.ip_address(ip_address)
-            return ip_obj.is_private or ip_obj.is_loopback
-        except:
-            return False
-    
-    def update_activity(self, packet_info: dict):
-        with self.lock:
-            self.last_seen = datetime.now()
-            self.packet_count += 1
-            
-            if self.packet_count > 50:
-                self.activity_level = 'high'
-            elif self.packet_count > 10:
-                self.activity_level = 'medium'
-            else:
-                self.activity_level = 'low'
+                return False
+        
+        self.trigger_count += 1
+        self.last_triggered = datetime.now()
+        self.trigger_times.append(current_time)
+        return True
 
-class SimpleTopologyTracker:
+# =============================================================================
+# ATTACK-DETECTION OPTIMIZED RULES
+# =============================================================================
+
+class HighPerformancePortScanRule(IDSRule):
+    """Port scan detection optimized for testing"""
     def __init__(self):
-        self.hosts = {}
-        self.connections = {}
-        self.stats = {
-            'total_packets_processed': 0,
-            'start_time': datetime.now()
+        super().__init__(
+            name="Port Scan Detected",
+            description="Multiple connection attempts to different ports",
+            severity="High"
+        )
+        self.port_attempts = defaultdict(list)
+        self.time_window = 60
+        self.threshold = 15  # REDUCED for easier testing
+        self.cleanup_interval = 30
+        self.last_cleanup = time.time()
+        
+        # MINIMAL legitimate ports for testing
+        self.legitimate_ports = frozenset({80, 443})  # Only web ports
+    
+    def check(self, packet_info, raw_data=None):
+        if packet_info.get('protocol') != 'TCP':
+            return False
+        
+        src_ip = packet_info.get('src_ip')
+        dst_port = packet_info.get('dst_port')
+        current_time = time.time()
+        
+        # Skip only essential legitimate ports
+        if dst_port in self.legitimate_ports:
+            return False
+        
+        # REMOVED private IP filtering for testing
+        
+        if src_ip and dst_port:
+            # Periodic cleanup
+            if current_time - self.last_cleanup > self.cleanup_interval:
+                self._cleanup_old_entries(current_time)
+                self.last_cleanup = current_time
+            
+            attempts = self.port_attempts[src_ip]
+            attempts.append({'port': dst_port, 'time': current_time})
+            
+            # Keep only recent attempts
+            recent_attempts = [a for a in attempts if current_time - a['time'] <= self.time_window]
+            self.port_attempts[src_ip] = recent_attempts
+            
+            # Check threshold
+            unique_ports = set(attempt['port'] for attempt in recent_attempts)
+            return len(unique_ports) >= self.threshold
+        
+        return False
+    
+    def _cleanup_old_entries(self, current_time):
+        """Clean up old entries"""
+        to_remove = []
+        for src_ip, attempts in self.port_attempts.items():
+            recent = [a for a in attempts if current_time - a['time'] <= self.time_window]
+            if recent:
+                self.port_attempts[src_ip] = recent
+            else:
+                to_remove.append(src_ip)
+        
+        for ip in to_remove:
+            del self.port_attempts[ip]
+
+class HighPerformanceDDoSDetectionRule(IDSRule):
+    """DDoS detection optimized for attack testing - FIX: More specific to avoid false positives"""
+    def __init__(self):
+        super().__init__(
+            name="DDoS Attack Detected",
+            description="High volume traffic from a single source to a single destination",
+            severity="High"
+        )
+        # FIX: Track packets per source AND destination to be more specific
+        self.packet_counts = defaultdict(lambda: defaultdict(deque))
+        self.time_window = 30  # Shorter window for faster detection
+        self.threshold = 100   # MUCH LOWER threshold for testing
+        self.cleanup_interval = 20
+        self.last_cleanup = time.time()
+        
+        # REMOVED WHITELIST - No IPs are whitelisted for testing
+        self.whitelist_ips = set()  # Empty whitelist
+    
+    def check(self, packet_info, raw_data=None):
+        src_ip = packet_info.get('src_ip')
+        dst_ip = packet_info.get('dst_ip') # FIX: Get destination IP
+        current_time = time.time()
+        
+        # REMOVED whitelist checking - detect everything
+        if not src_ip or not dst_ip:
+            return False
+        
+        # Only skip actual localhost
+        if src_ip == '127.0.0.1':
+            return False
+        
+        # Periodic cleanup
+        if current_time - self.last_cleanup > self.cleanup_interval:
+            self._cleanup_old_entries(current_time)
+            self.last_cleanup = current_time
+        
+        # FIX: Track packets per source-destination pair
+        timestamps = self.packet_counts[src_ip][dst_ip]
+        timestamps.append(current_time)
+        
+        # Keep only recent timestamps
+        while timestamps and current_time - timestamps[0] > self.time_window:
+            timestamps.popleft()
+        
+        # Check threshold - MUCH more sensitive
+        packet_count = len(timestamps)
+        if packet_count >= self.threshold:
+            # FIX: More descriptive log message
+            print(f"🚨 DDoS detected: {src_ip} sent {packet_count} packets to {dst_ip} in {self.time_window}s")
+            return True
+        
+        return False
+    
+    def _cleanup_old_entries(self, current_time):
+        """FIX: Cleanup old entries for the nested dictionary"""
+        to_remove_src = []
+        for src_ip, dst_map in self.packet_counts.items():
+            to_remove_dst = []
+            for dst_ip, timestamps in dst_map.items():
+                while timestamps and current_time - timestamps[0] > self.time_window:
+                    timestamps.popleft()
+                if not timestamps:
+                    to_remove_dst.append(dst_ip)
+            
+            for dst_ip in to_remove_dst:
+                del dst_map[dst_ip]
+                
+            if not dst_map:
+                to_remove_src.append(src_ip)
+        
+        for ip in to_remove_src:
+            del self.packet_counts[ip]
+
+
+class HighPerformanceBruteForceRule(IDSRule):
+    """Brute force detection optimized for testing"""
+    def __init__(self):
+        super().__init__(
+            name="Brute Force Attack Detected",
+            description="Multiple authentication attempts detected",
+            severity="High"
+        )
+        self.connection_attempts = defaultdict(deque)
+        self.time_window = 300
+        self.threshold = 30  # REDUCED threshold for testing
+        self.auth_ports = frozenset({22, 23, 21, 3389, 5900, 1433, 3306, 5432})
+        self.cleanup_interval = 60
+        self.last_cleanup = time.time()
+    
+    def check(self, packet_info, raw_data=None):
+        if packet_info.get('protocol') != 'TCP':
+            return False
+        
+        dst_port = packet_info.get('dst_port')
+        src_ip = packet_info.get('src_ip')
+        current_time = time.time()
+        
+        # Only check auth ports, but don't skip any IPs except actual localhost
+        if dst_port not in self.auth_ports or not src_ip or src_ip == '127.0.0.1':
+            return False
+        
+        # Periodic cleanup
+        if current_time - self.last_cleanup > self.cleanup_interval:
+            self._cleanup_old_entries(current_time)
+            self.last_cleanup = current_time
+        
+        key = f"{src_ip}:{dst_port}"
+        timestamps = self.connection_attempts[key]
+        timestamps.append(current_time)
+        
+        # Keep only recent attempts
+        while timestamps and current_time - timestamps[0] > self.time_window:
+            timestamps.popleft()
+        
+        attempt_count = len(timestamps)
+        if attempt_count >= self.threshold:
+            print(f"🚨 Brute Force detected: {src_ip}:{dst_port} made {attempt_count} attempts")
+            return True
+        
+        return False
+    
+    def _cleanup_old_entries(self, current_time):
+        to_remove = []
+        for key, timestamps in self.connection_attempts.items():
+            while timestamps and current_time - timestamps[0] > self.time_window:
+                timestamps.popleft()
+            if not timestamps:
+                to_remove.append(key)
+        
+        for key in to_remove:
+            del self.connection_attempts[key]
+
+class HighPerformanceDNSTunnelingRule(IDSRule):
+    """DNS tunneling detection optimized for testing"""
+    def __init__(self):
+        super().__init__(
+            name="DNS Tunneling Detected",
+            description="Suspicious DNS query patterns detected",
+            severity="High"
+        )
+        self.dns_queries = defaultdict(deque)
+        self.time_window = 60
+        self.threshold = 50  # REDUCED threshold for testing
+        self.cleanup_interval = 30
+        self.last_cleanup = time.time()
+    
+    def check(self, packet_info, raw_data=None):
+        if not (packet_info.get('protocol') == 'UDP' and packet_info.get('dst_port') == 53):
+            return False
+        
+        src_ip = packet_info.get('src_ip')
+        current_time = time.time()
+        
+        # Only skip actual localhost
+        if src_ip == '127.0.0.1':
+            return False
+        
+        if src_ip:
+            # Periodic cleanup
+            if current_time - self.last_cleanup > self.cleanup_interval:
+                self._cleanup_old_entries(current_time)
+                self.last_cleanup = current_time
+            
+            timestamps = self.dns_queries[src_ip]
+            timestamps.append(current_time)
+            
+            # Keep only recent queries
+            while timestamps and current_time - timestamps[0] > self.time_window:
+                timestamps.popleft()
+            
+            query_count = len(timestamps)
+            if query_count >= self.threshold:
+                print(f"🚨 DNS Tunneling detected: {src_ip} made {query_count} DNS queries")
+                return True
+        
+        return False
+    
+    def _cleanup_old_entries(self, current_time):
+        to_remove = []
+        for src_ip, timestamps in self.dns_queries.items():
+            while timestamps and current_time - timestamps[0] > self.time_window:
+                timestamps.popleft()
+            if not timestamps:
+                to_remove.append(src_ip)
+        
+        for ip in to_remove:
+            del self.dns_queries[ip]
+
+class HighPerformanceReconRule(IDSRule):
+    """Network reconnaissance detection"""
+    def __init__(self):
+        super().__init__(
+            name="Network Reconnaissance Detected",
+            description="ICMP reconnaissance activity detected",
+            severity="Medium"
+        )
+        self.icmp_requests = defaultdict(deque)
+        self.time_window = 60
+        self.threshold = 25  # REDUCED threshold
+        self.cleanup_interval = 30
+        self.last_cleanup = time.time()
+    
+    def check(self, packet_info, raw_data=None):
+        if packet_info.get('protocol') != 'ICMP':
+            return False
+        
+        src_ip = packet_info.get('src_ip')
+        current_time = time.time()
+        
+        # Only skip actual localhost
+        if src_ip == '127.0.0.1':
+            return False
+        
+        if src_ip:
+            # Periodic cleanup
+            if current_time - self.last_cleanup > self.cleanup_interval:
+                self._cleanup_old_entries(current_time)
+                self.last_cleanup = current_time
+            
+            timestamps = self.icmp_requests[src_ip]
+            timestamps.append(current_time)
+            
+            # Keep only recent requests
+            while timestamps and current_time - timestamps[0] > self.time_window:
+                timestamps.popleft()
+            
+            icmp_count = len(timestamps)
+            if icmp_count >= self.threshold:
+                print(f"🚨 Network Recon detected: {src_ip} sent {icmp_count} ICMP packets")
+                return True
+        
+        return False
+    
+    def _cleanup_old_entries(self, current_time):
+        to_remove = []
+        for src_ip, timestamps in self.icmp_requests.items():
+            while timestamps and current_time - timestamps[0] > self.time_window:
+                timestamps.popleft()
+            if not timestamps:
+                to_remove.append(src_ip)
+        
+        for ip in to_remove:
+            del self.icmp_requests[ip]
+
+class SuspiciousPayloadRule(IDSRule):
+    """Payload-based threat detection"""
+    def __init__(self):
+        super().__init__(
+            name="Suspicious Payload Detected",
+            description="Malicious payload patterns found",
+            severity="High"
+        )
+        self.malicious_patterns = [
+            b'cmd.exe', b'/bin/sh', b'powershell',
+            b'SELECT * FROM', b'UNION SELECT',
+            b'<script>', b'javascript:', b'eval(',
+            b'system(', b'exec('
+        ]
+    
+    def check(self, packet_info, raw_data=None):
+        if not raw_data or len(raw_data) <= 40:
+            return False
+        
+        payload = raw_data[40:].lower()
+        
+        # Check reasonable payload sizes
+        if len(payload) > 10000:
+            return False
+        
+        detected = any(pattern in payload for pattern in self.malicious_patterns)
+        if detected:
+            print(f"🚨 Suspicious Payload detected from {packet_info.get('src_ip')}")
+        
+        return detected
+
+# =============================================================================
+# HIGH-PERFORMANCE IDS ENGINE
+# =============================================================================
+
+class HighPerformanceIDSEngine:
+    """Main IDS engine optimized for high performance and attack detection"""
+    def __init__(self, environment="testing"):
+        logger.info("🛡️ Initializing High-Performance IDS Engine...")
+        
+        # Initialize detection rules - ALL OPTIMIZED FOR TESTING
+        self.rules = [
+            HighPerformancePortScanRule(),
+            HighPerformanceDDoSDetectionRule(),
+            HighPerformanceBruteForceRule(),
+            HighPerformanceDNSTunnelingRule(),
+            HighPerformanceReconRule(),
+            SuspiciousPayloadRule(),
+        ]
+        
+        self.total_alerts = 0
+        self.yara_engine = None
+        self.analysis_cache = {}
+        self.cache_size_limit = 500  # Smaller cache for performance
+        
+        # Performance metrics
+        self.metrics = {
+            'packets_analyzed': 0,
+            'alerts_generated': 0,
+            'cache_hits': 0,
+            'processing_time': 0.0,
+            'last_reset': time.time()
         }
-        self.lock = threading.Lock()
-        logger.info("🌐 Simple Topology Tracker initialized")
-    
-    def process_packet(self, packet_info: dict):
-        try:
-            src_ip = packet_info.get('src_ip')
-            dst_ip = packet_info.get('dst_ip')
-            
-            if not src_ip or not dst_ip:
-                return
-            
-            # Skip localhost-to-localhost
-            if src_ip == '127.0.0.1' and dst_ip == '127.0.0.1':
-                return
-            
-            with self.lock:
-                # Update hosts
-                if src_ip not in self.hosts:
-                    self.hosts[src_ip] = SimpleNetworkHost(src_ip)
-                    logger.debug(f"New host discovered: {src_ip}")
-                
-                if dst_ip not in self.hosts:
-                    self.hosts[dst_ip] = SimpleNetworkHost(dst_ip)
-                    logger.debug(f"New host discovered: {dst_ip}")
-                
-                self.hosts[src_ip].update_activity(packet_info)
-                self.hosts[dst_ip].update_activity(packet_info)
-                
-                # Track connection
-                conn_id = f"{src_ip}-{dst_ip}"
-                if conn_id not in self.connections:
-                    self.connections[conn_id] = {
-                        'source': src_ip,
-                        'target': dst_ip,
-                        'packet_count': 0,
-                        'first_seen': datetime.now()
-                    }
-                
-                self.connections[conn_id]['packet_count'] += 1
-                self.stats['total_packets_processed'] += 1
-                
-                # Log every 25 packets
-                if self.stats['total_packets_processed'] % 25 == 0:
-                    logger.info(f"🌐 Topology: {len(self.hosts)} hosts, {len(self.connections)} connections")
         
-        except Exception as e:
-            logger.error(f"Error processing packet for topology: {e}")
-    
-    def get_topology_data(self) -> dict:
-        try:
-            with self.lock:
-                nodes = []
-                for ip, host in self.hosts.items():
-                    nodes.append({
-                        'id': ip,
-                        'ip_address': ip,
-                        'host_type': host.host_type,
-                        'is_internal': host.is_internal,
-                        'packet_count': host.packet_count,
-                        'activity_level': host.activity_level,
-                        'threat_level': host.threat_level,
-                        'alert_count': host.alert_count,
-                        'last_seen': host.last_seen.isoformat()
-                    })
-                
-                links = []
-                for conn_id, conn in self.connections.items():
-                    links.append({
-                        'source': conn['source'],
-                        'target': conn['target'],
-                        'packet_count': conn['packet_count'],
-                        'bandwidth_category': 'high' if conn['packet_count'] > 50 else 'medium' if conn['packet_count'] > 10 else 'low',
-                        'threat_score': 0
-                    })
-                
-                return {
-                    'nodes': nodes,
-                    'links': links,
-                    'stats': self.stats,
-                    'timestamp': datetime.now().isoformat()
-                }
+        # Initialize YARA if available
+        if YARA_AVAILABLE:
+            try:
+                self.yara_engine = integrate_yara_into_ids(self)
+                logger.info("🔍 YARA engine initialized")
+            except Exception as e:
+                logger.error(f"❌ YARA initialization failed: {e}")
+                self.yara_engine = None
         
-        except Exception as e:
-            logger.error(f"Error getting topology data: {e}")
-            return {'nodes': [], 'links': [], 'stats': {}, 'timestamp': datetime.now().isoformat()}
+        self._print_initialization_summary()
+    
+    def analyze_packet(self, packet_info, raw_data=None):
+        """High-performance packet analysis"""
+        start_time = time.time()
+        triggered_alerts = []
+        
+        # Simplified caching for performance
+        cache_key = f"{packet_info.get('src_ip')}:{packet_info.get('protocol')}:{packet_info.get('dst_port')}"
+        
+        # Analyze packet against all rules
+        for rule in self.rules:
+            if rule.enabled and rule.check(packet_info, raw_data):
+                if rule.trigger():
+                    alert = self._create_alert(rule, packet_info)
+                    triggered_alerts.append(alert)
+                    print(f"🚨 ALERT: {rule.name} - {packet_info.get('src_ip')} → {packet_info.get('dst_ip')}")
+        
+        # Update metrics
+        self.metrics['packets_analyzed'] += 1
+        self.metrics['alerts_generated'] += len(triggered_alerts)
+        self.metrics['processing_time'] += time.time() - start_time
+        
+        # Reset metrics periodically
+        if time.time() - self.metrics['last_reset'] > 60:
+            self._reset_metrics()
+        
+        self.total_alerts += len(triggered_alerts)
+        return triggered_alerts
+    
+    def _reset_metrics(self):
+        """Reset metrics for fresh stats"""
+        self.metrics = {
+            'packets_analyzed': 0,
+            'alerts_generated': 0,
+            'cache_hits': 0,
+            'processing_time': 0.0,
+            'last_reset': time.time()
+        }
+    
+    def _create_alert(self, rule, packet_info):
+        """Create standardized alert"""
+        return {
+            'id': self.total_alerts + 1,
+            'timestamp': datetime.now().strftime("%H:%M:%S.%f")[:-3],
+            'rule_name': rule.name,
+            'description': rule.description,
+            'severity': rule.severity,
+            'detection_type': 'Traditional',
+            'src_ip': packet_info.get('src_ip'),
+            'dst_ip': packet_info.get('dst_ip'),
+            'src_port': packet_info.get('src_port'),
+            'dst_port': packet_info.get('dst_port'),
+            'protocol': packet_info.get('protocol'),
+            'packet_size': packet_info.get('size'),
+            'packet_id': packet_info.get('id')
+        }
+    
+    def _print_initialization_summary(self):
+        """Print initialization summary"""
+        print(f"📊 High-Performance IDS Engine Ready:")
+        print(f"   • {len(self.rules)} detection rules loaded")
+        print(f"   • Environment: {CONFIG['environment']} (attack detection optimized)")
+        print(f"   • YARA: {'Available' if self.yara_engine else 'Not available'}")
+        print(f"   • Whitelisting: DISABLED for testing")
+        print(f"   • Thresholds: REDUCED for testing")
 
 # =============================================================================
-# ENHANCED PACKET CAPTURE WITH DIAGNOSTICS
+# HIGH-PERFORMANCE PACKET CAPTURE
 # =============================================================================
 
-class DiagnosticPacketCapture:
+class HighPerformancePacketCapture:
+    """High-performance packet capture - 500+ pps"""
     def __init__(self):
         self.conn = None
         self.is_running = False
-        self.topology_tracker = SimpleTopologyTracker()
+        self.ids_engine = HighPerformanceIDSEngine(CONFIG['environment'])
         self.packet_stats = {
             'total_packets': 0,
             'total_alerts': 0,
             'start_time': None,
+            'dropped_packets': 0,
             'packets_per_second': 0,
-            'last_rate_check': time.time(),
-            'capture_errors': 0,
-            'last_error': None
+            'last_rate_check': time.time()
         }
         
+        # High-performance background processing
+        self.processing_threads = []
         self.ui_update_thread = None
-        self.topology_update_thread = None
-        
-        # Test data generation
-        self.generate_test_data = False
-        self.test_data_thread = None
+        self.num_processing_threads = 3  # Multiple processing threads
     
     def start_capture(self, interface_ip):
-        """Start packet capture with detailed diagnostics"""
+        """Start high-performance packet capture"""
         try:
-            logger.info(f"🚀 Starting diagnostic packet capture on {interface_ip}")
-            
-            # Run diagnostics first
-            issues, solutions = check_system_requirements()
-            if issues:
-                logger.warning("⚠️ System requirement issues found:")
-                for issue in issues:
-                    logger.warning(f"   {issue}")
-                for solution in solutions:
-                    logger.info(f"   {solution}")
-            
-            # Test capture capability
-            test_results = test_packet_capture_capability(interface_ip)
-            for result in test_results:
-                logger.info(f"   {result}")
-            
-            # Check if we have any critical failures
-            critical_failures = [r for r in test_results if r.startswith('❌') and ('Raw socket' in r or 'Bind failed' in r)]
-            if critical_failures:
-                logger.error("💥 Critical packet capture failures detected!")
-                logger.info("🔄 Falling back to test data generation...")
-                self.generate_test_data = True
-                return self._start_test_mode(interface_ip)
-            
-            # Try to start real packet capture
             self.conn = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IP)
             self.conn.bind((interface_ip, 0))
             self.conn.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
             
             if sys.platform == "win32":
-                try:
-                    self.conn.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
-                    logger.info("✅ Windows promiscuous mode enabled")
-                except Exception as e:
-                    logger.warning(f"⚠️ Promiscuous mode failed: {e}")
+                self.conn.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
             
             self.is_running = True
             self.packet_stats['start_time'] = datetime.now()
             
-            # Start threads
-            self._start_threads()
+            # Start multiple background processing threads for high performance
+            for i in range(self.num_processing_threads):
+                thread = threading.Thread(target=self._background_processor, daemon=True, name=f"Processor-{i}")
+                self.processing_threads.append(thread)
+                thread.start()
             
-            logger.info(f"✅ Real packet capture started successfully on {interface_ip}")
-            return True, None
+            # Start UI update thread
+            self.ui_update_thread = threading.Thread(target=self._high_performance_ui_updater, daemon=True)
+            self.ui_update_thread.start()
             
-        except Exception as e:
-            logger.error(f"❌ Real packet capture failed: {e}")
-            logger.info("🔄 Falling back to test data generation...")
-            self.generate_test_data = True
-            return self._start_test_mode(interface_ip)
-    
-    def _start_test_mode(self, interface_ip):
-        """Start test mode with simulated data"""
-        try:
-            self.is_running = True
-            self.packet_stats['start_time'] = datetime.now()
-            
-            # Start test data generation
-            self.test_data_thread = threading.Thread(target=self._generate_test_packets, daemon=True)
-            self.test_data_thread.start()
-            
-            # Start UI threads
-            self._start_threads()
-            
-            logger.info("✅ Test mode started - generating simulated network data")
-            return True, "Test mode: Generating simulated data"
+            print(f"🚀 High-performance packet capture started on {interface_ip}")
+            print(f"📊 Processing threads: {self.num_processing_threads}")
+            print(f"⚡ Target performance: 500+ packets/second")
+            return True
             
         except Exception as e:
-            logger.error(f"❌ Test mode failed: {e}")
+            print(f"❌ Failed to start capture: {e}")
             return False, str(e)
     
-    def _start_threads(self):
-        """Start background threads"""
-        self.ui_update_thread = threading.Thread(target=self._ui_updater, daemon=True)
-        self.ui_update_thread.start()
-        
-        self.topology_update_thread = threading.Thread(target=self._topology_updater, daemon=True)
-        self.topology_update_thread.start()
-    
-    def _generate_test_packets(self):
-        """Generate test packet data for demonstration"""
-        logger.info("📊 Starting test packet generation...")
-        
-        test_ips = [
-            '192.168.1.100', '192.168.1.101', '192.168.1.102',
-            '8.8.8.8', '1.1.1.1', '192.168.1.1'
-        ]
-        
-        packet_id = 1
-        
-        while self.is_running:
-            try:
-                # Generate a test packet
-                import random
-                
-                src_ip = random.choice(test_ips)
-                dst_ip = random.choice(test_ips)
-                
-                if src_ip == dst_ip:
-                    continue
-                
-                packet_info = {
-                    'id': packet_id,
-                    'timestamp': datetime.now().strftime("%H:%M:%S.%f")[:-3],
-                    'src_ip': src_ip,
-                    'dst_ip': dst_ip,
-                    'protocol': random.choice(['TCP', 'UDP', 'ICMP']),
-                    'src_port': random.randint(1024, 65535),
-                    'dst_port': random.choice([80, 443, 22, 53, 21, 25]),
-                    'size': random.randint(64, 1500),
-                    'flags': random.choice(['SYN', 'ACK', 'SYN,ACK', 'FIN', None])
-                }
-                
-                # Process packet
-                self.topology_tracker.process_packet(packet_info)
-                captured_packets.append(packet_info)
-                
-                # Generate occasional alerts for testing
-                if random.random() < 0.05:  # 5% chance
-                    alert = {
-                        'id': packet_id,
-                        'timestamp': packet_info['timestamp'],
-                        'rule_name': random.choice(['Port Scan Detected', 'DDoS Attack Detected', 'Brute Force Attack']),
-                        'description': 'Test alert for demonstration',
-                        'severity': random.choice(['Low', 'Medium', 'High']),
-                        'src_ip': src_ip,
-                        'dst_ip': dst_ip,
-                        'protocol': packet_info['protocol'],
-                        'packet_id': packet_id
-                    }
-                    alerts.append(alert)
-                    self.packet_stats['total_alerts'] += 1
-                
-                self.packet_stats['total_packets'] += 1
-                packet_id += 1
-                
-                # Calculate rate
-                current_time = time.time()
-                if current_time - self.packet_stats['last_rate_check'] >= 1.0:
-                    self.packet_stats['packets_per_second'] = random.randint(10, 100)
-                    self.packet_stats['last_rate_check'] = current_time
-                
-                # Vary the sleep time for realistic simulation
-                time.sleep(random.uniform(0.01, 0.1))
-                
-            except Exception as e:
-                logger.error(f"Test packet generation error: {e}")
-                time.sleep(1)
-    
     def capture_packets(self):
-        """Real packet capture loop"""
-        logger.info("🔍 Starting real packet analysis...")
+        """Main packet capture loop - optimized for speed"""
+        print("🔍 Starting high-performance packet analysis...")
         
         packet_count = 0
         last_rate_time = time.time()
@@ -480,49 +780,129 @@ class DiagnosticPacketCapture:
                 packet_count += 1
                 self.packet_stats['total_packets'] += 1
                 
-                # Calculate rate
+                # Calculate packets per second
                 current_time = time.time()
                 if current_time - last_rate_time >= 1.0:
                     self.packet_stats['packets_per_second'] = packet_count
                     packet_count = 0
                     last_rate_time = current_time
                 
-                # Parse packet
-                packet_info = self.parse_packet(raw_data, self.packet_stats['total_packets'])
+                # Parse packet quickly
+                packet_info = self.parse_packet_fast(raw_data, self.packet_stats['total_packets'])
                 
-                # Process packet
-                self.topology_tracker.process_packet(packet_info)
-                captured_packets.append(packet_info)
-                
-                # Log first few packets for debugging
-                if self.packet_stats['total_packets'] <= 5:
-                    logger.info(f"📦 Packet {self.packet_stats['total_packets']}: {packet_info['src_ip']} → {packet_info['dst_ip']} [{packet_info['protocol']}]")
+                # Add to queue for background processing - non-blocking
+                try:
+                    packet_queue.put((packet_info, raw_data), block=False)
+                except queue.Full:
+                    self.packet_stats['dropped_packets'] += 1
                 
             except Exception as e:
-                self.packet_stats['capture_errors'] += 1
-                self.packet_stats['last_error'] = str(e)
-                
                 if self.is_running:
-                    logger.error(f"Capture error: {e}")
-                    time.sleep(0.1)  # Brief pause on error
+                    print(f"❌ Capture error: {e}")
+                    socketio.emit('capture_error', {'error': str(e)})
                 break
     
-    def parse_packet(self, data, packet_num):
-        """Parse packet data"""
+   
+
+    
+    def _background_processor(self):
+        """Background thread for high-speed packet processing"""
+        while self.is_running:
+            try:
+                packet_info, raw_data = packet_queue.get(timeout=1)
+                
+                # IDS analysis
+                packet_alerts = self.ids_engine.analyze_packet(packet_info, raw_data)
+                
+                # ADD THIS LINE: Update network topology
+                update_network_topology(packet_info)
+                
+                # Add packet to display queue
+                captured_packets.append(packet_info)
+                
+                # Handle alerts
+                for alert in packet_alerts:
+                    alerts.append(alert)
+                    self.packet_stats['total_alerts'] += 1
+                    
+                    # ADD THESE LINES: Mark threat IPs
+                    if alert.get('src_ip'):
+                        mark_threat_ip(alert['src_ip'])
+                    if alert.get('dst_ip'):
+                        mark_threat_ip(alert['dst_ip'])
+                    
+                    try:
+                        alert_queue.put(alert, block=False)
+                    except queue.Full:
+                        pass
+                    
+            except queue.Empty:
+                continue
+            except Exception as e:
+                if self.is_running:
+                    print(f"Background processing error: {e}")
+
+
+
+
+
+
+    
+    
+    def _high_performance_ui_updater(self):
+        """High-performance UI updater - 500+ pps capable"""
+        while self.is_running:
+            try:
+                time.sleep(CONFIG['update_interval'])  # 0.1 seconds
+                
+                # Batch packet updates - larger batches
+                packets_to_send = []
+                for _ in range(min(CONFIG['batch_size'], len(captured_packets))):
+                    if captured_packets:
+                        packets_to_send.append(captured_packets[-_-1])
+                
+                if packets_to_send:
+                    socketio.emit('packet_batch', packets_to_send[::-1])  # Reverse to show newest first
+                
+                # Batch alert updates
+                alerts_to_send = []
+                alert_count = 0
+                while not alert_queue.empty() and alert_count < CONFIG['batch_size']:
+                    try:
+                        alert = alert_queue.get_nowait()
+                        alerts_to_send.append(alert)
+                        alert_count += 1
+                    except queue.Empty:
+                        break
+                
+                if alerts_to_send:
+                    socketio.emit('alert_batch', alerts_to_send)
+                
+                # Send enhanced stats
+                stats = {
+                    'packets': self.packet_stats['total_packets'],
+                    'alerts': self.packet_stats['total_alerts'],
+                    'dropped': self.packet_stats['dropped_packets'],
+                    'queue_size': packet_queue.qsize(),
+                    'packets_per_second': self.packet_stats['packets_per_second'],
+                    'processing_threads': len([t for t in self.processing_threads if t.is_alive()]),
+                    'ids_metrics': self.ids_engine.metrics
+                }
+                socketio.emit('stats_update', stats)
+                
+            except Exception as e:
+                if self.is_running:
+                    print(f"UI update error: {e}")
+    
+    def parse_packet_fast(self, data, packet_num):
+        """Ultra-fast packet parsing - minimal processing"""
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         
         try:
+            # Quick IP header parse
             if len(data) < 20:
-                return {
-                    'id': packet_num,
-                    'timestamp': timestamp,
-                    'src_ip': 'unknown',
-                    'dst_ip': 'unknown',
-                    'protocol': 'Unknown',
-                    'size': len(data)
-                }
+                return self._create_minimal_packet(packet_num, timestamp, len(data))
             
-            # Parse IP header
             ip_header = struct.unpack('!BBHHHBBH4s4s', data[:20])
             version_ihl = ip_header[0]
             ihl = version_ihl & 0xF
@@ -541,7 +921,7 @@ class DiagnosticPacketCapture:
                 'flags': None
             }
             
-            # Parse transport layer
+            # Quick transport layer parse
             if ip_header[6] == 6 and len(data) >= header_length + 20:  # TCP
                 tcp_header = struct.unpack('!HHLLBBHHH', data[header_length:header_length+20])
                 packet_info['src_port'] = tcp_header[0]
@@ -553,7 +933,7 @@ class DiagnosticPacketCapture:
                 if flags & 0x10: flag_names.append('ACK')
                 if flags & 0x01: flag_names.append('FIN')
                 if flags & 0x04: flag_names.append('RST')
-                packet_info['flags'] = ','.join(flag_names) if flag_names else None
+                packet_info['flags'] = ','.join(flag_names) if flag_names else 'None'
                 
             elif ip_header[6] == 17 and len(data) >= header_length + 8:  # UDP
                 udp_header = struct.unpack('!HHHH', data[header_length:header_length+8])
@@ -563,70 +943,24 @@ class DiagnosticPacketCapture:
             return packet_info
             
         except Exception as e:
-            logger.warning(f"Packet parse error: {e}")
-            return {
-                'id': packet_num,
-                'timestamp': timestamp,
-                'src_ip': 'parse_error',
-                'dst_ip': 'parse_error',
-                'protocol': 'Unknown',
-                'size': len(data),
-                'error': str(e)
-            }
+            return self._create_minimal_packet(packet_num, timestamp, len(data), str(e))
+    
+    def _create_minimal_packet(self, packet_num, timestamp, size, error=None):
+        """Create minimal packet info for errors"""
+        return {
+            'id': packet_num,
+            'timestamp': timestamp,
+            'src_ip': 'unknown',
+            'dst_ip': 'unknown',
+            'protocol': 'Unknown',
+            'size': size,
+            'error': error
+        }
     
     def get_protocol_name(self, protocol_num):
+        """Fast protocol name lookup"""
         protocols = {1: 'ICMP', 6: 'TCP', 17: 'UDP', 2: 'IGMP'}
         return protocols.get(protocol_num, f'Protocol-{protocol_num}')
-    
-    def _ui_updater(self):
-        """Background thread for UI updates"""
-        while self.is_running:
-            try:
-                time.sleep(0.5)  # Update every 500ms
-                
-                # Send packet batch
-                packets_to_send = list(captured_packets)[-15:]  # Last 15 packets
-                if packets_to_send:
-                    socketio.emit('packet_batch', packets_to_send)
-                
-                # Send alert batch
-                alerts_to_send = list(alerts)[-10:]  # Last 10 alerts
-                if alerts_to_send:
-                    socketio.emit('alert_batch', alerts_to_send)
-                
-                # Send stats
-                stats = {
-                    'packets': self.packet_stats['total_packets'],
-                    'alerts': self.packet_stats['total_alerts'],
-                    'packets_per_second': self.packet_stats['packets_per_second'],
-                    'queue_size': 0,
-                    'capture_errors': self.packet_stats['capture_errors'],
-                    'test_mode': self.generate_test_data
-                }
-                socketio.emit('stats_update', stats)
-                
-            except Exception as e:
-                if self.is_running:
-                    logger.error(f"UI update error: {e}")
-    
-    def _topology_updater(self):
-        """Background thread for topology updates"""
-        while self.is_running:
-            try:
-                time.sleep(2.0)  # Update every 2 seconds
-                
-                topology_data = self.topology_tracker.get_topology_data()
-                
-                nodes = topology_data.get('nodes', [])
-                links = topology_data.get('links', [])
-                
-                if nodes or links:
-                    socketio.emit('topology_update', topology_data)
-                    logger.debug(f"📡 Sent topology update: {len(nodes)} nodes, {len(links)} links")
-                
-            except Exception as e:
-                if self.is_running:
-                    logger.error(f"Topology update error: {e}")
     
     def get_network_interfaces(self):
         """Get available network interfaces"""
@@ -634,14 +968,14 @@ class DiagnosticPacketCapture:
         try:
             for interface_name, addresses in psutil.net_if_addrs().items():
                 for addr in addresses:
-                    if addr.family == socket.AF_INET and not addr.address.startswith('127.'):
+                    if addr.family == socket.AF_INET:
                         interfaces.append({
                             'name': interface_name,
                             'ip': addr.address,
                             'netmask': addr.netmask
                         })
         except Exception as e:
-            logger.error(f"Error getting interfaces: {e}")
+            logger.error(f"❌ Error getting interfaces: {e}")
         
         return interfaces
     
@@ -658,879 +992,17 @@ class DiagnosticPacketCapture:
             self.conn.close()
             self.conn = None
         
-        logger.info("⏹️ Packet capture stopped")
+        print("⏹️ High-performance packet capture stopped")
 
 # =============================================================================
-# FLASK APPLICATION
+# FLASK ROUTES - OPTIMIZED
 # =============================================================================
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'diagnostic_ids_key_2024'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-
-# Global variables
-capture_thread = None
-is_capturing = False
-captured_packets = deque(maxlen=500)
-alerts = deque(maxlen=100)
-
-# Packet capture instance
-packet_capture = DiagnosticPacketCapture()
-
-# HTML Template (simplified for diagnostics)
-HTML_TEMPLATE = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Diagnostic IDS with Network Topology</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
-            min-height: 100vh;
-        }
-        .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
-        .header {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        .diagnostic-badge {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-            color: white;
-            padding: 6px 15px;
-            border-radius: 25px;
-            font-size: 0.85rem;
-            font-weight: 700;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        
-        .dashboard {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat-card {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 15px;
-            text-align: center;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        .stat-number { font-size: 1.6rem; font-weight: 700; color: #667eea; }
-        .stat-label { color: #718096; font-size: 0.75rem; font-weight: 500; }
-        .performance-number { color: #48bb78 !important; }
-        .alert-stat { color: #e53e3e !important; }
-        .topology-stat { color: #4f46e5 !important; }
-        
-        .controls, .status {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        label { display: block; margin-bottom: 5px; font-weight: 600; color: #4a5568; }
-        select, button {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 16px;
-            margin-bottom: 10px;
-        }
-        
-        button {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-        }
-        button:disabled { background: #cbd5e0; cursor: not-allowed; }
-        
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .status-dot {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: #f56565;
-            animation: pulse 2s infinite;
-        }
-        .status-dot.active { background: #48bb78; }
-        .status-dot.test { background: #f59e0b; }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 20px;
-        }
-        
-        .network-container {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            height: 600px;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .network-header {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            color: white;
-            padding: 15px 20px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            border-radius: 15px 15px 0 0;
-        }
-        
-        .network-visualization {
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .network-svg {
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        }
-        
-        .alerts-packets-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .alerts-container, .packets-container {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            height: 500px;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .alerts-header {
-            background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
-            color: white;
-            padding: 15px 20px;
-            font-weight: 600;
-            border-radius: 15px 15px 0 0;
-        }
-        
-        .packets-header {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-            color: white;
-            padding: 15px 20px;
-            font-weight: 600;
-            border-radius: 15px 15px 0 0;
-        }
-        
-        .alerts-list, .packets-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-        
-        .alert, .packet {
-            border-bottom: 1px solid #e2e8f0;
-            padding: 12px;
-            margin-bottom: 8px;
-            border-radius: 8px;
-            transition: background-color 0.2s ease;
-        }
-        
-        .alert {
-            background: linear-gradient(90deg, rgba(229, 62, 62, 0.08) 0%, transparent 100%);
-            border-left: 4px solid #e53e3e;
-            animation: alert-flash 0.5s ease-out;
-        }
-        
-        @keyframes alert-flash {
-            0% { background: rgba(229, 62, 62, 0.2); }
-            100% { background: linear-gradient(90deg, rgba(229, 62, 62, 0.08) 0%, transparent 100%); }
-        }
-        
-        .packet {
-            background: #f8fafc;
-            animation: packet-slide 0.3s ease-out;
-        }
-        
-        @keyframes packet-slide {
-            0% { transform: translateX(-10px); opacity: 0; }
-            100% { transform: translateX(0); opacity: 1; }
-        }
-        
-        .alert-title { font-weight: 600; color: #e53e3e; margin-bottom: 5px; }
-        .alert-details, .packet-details {
-            font-size: 0.9em;
-            color: #4a5568;
-            font-family: 'Consolas', 'Monaco', monospace;
-            line-height: 1.4;
-        }
-        
-        .packet-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 5px;
-        }
-        
-        .packet-id { font-weight: 600; color: #48bb78; margin-right: 10px; }
-        .protocol-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.7em;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .protocol-tcp { background: #bee3f8; color: #2b6cb0; }
-        .protocol-udp { background: #c6f6d5; color: #276749; }
-        .protocol-icmp { background: #fed7d7; color: #c53030; }
-        .protocol-other { background: #e2e8f0; color: #4a5568; }
-        
-        .no-items { text-align: center; padding: 40px; color: #718096; }
-        
-        /* Topology styles */
-        .node { cursor: pointer; transition: all 0.3s ease; }
-        .node:hover { stroke-width: 3px; filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.3)); }
-        .link { stroke: #999; stroke-opacity: 0.6; transition: all 0.3s ease; }
-        .link:hover { stroke-opacity: 1; stroke-width: 3px; }
-        .node-label {
-            font-size: 10px;
-            text-anchor: middle;
-            fill: #374151;
-            font-family: 'Segoe UI', sans-serif;
-            font-weight: 500;
-            pointer-events: none;
-            user-select: none;
-        }
-        
-        .tooltip {
-            position: absolute;
-            background: rgba(0, 0, 0, 0.9);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            pointer-events: none;
-            z-index: 1000;
-            opacity: 0;
-            transition: opacity 0.2s;
-            max-width: 250px;
-            line-height: 1.4;
-        }
-        .tooltip.show { opacity: 1; }
-        
-        .diagnostic-info {
-            background: rgba(255, 243, 205, 0.9);
-            border: 2px solid #f59e0b;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .diagnostic-title {
-            color: #92400e;
-            font-weight: 700;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        @media (max-width: 1200px) {
-            .alerts-packets-section { grid-template-columns: 1fr; }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>
-                🛡️ Diagnostic IDS System
-                <span class="diagnostic-badge">+ Enhanced Troubleshooting</span>
-            </h1>
-            <p>Network intrusion detection with automatic diagnostics and fallback modes</p>
-        </div>
-        
-        <div class="diagnostic-info" id="diagnostic-info" style="display: none;">
-            <div class="diagnostic-title">
-                🔧 System Diagnostics
-            </div>
-            <div id="diagnostic-details">
-                Running system diagnostics...
-            </div>
-        </div>
-        
-        <div class="dashboard">
-            <div class="stat-card">
-                <span class="stat-number performance-number" id="packet-rate">0</span>
-                <div class="stat-label">Packets/Second</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number" id="packet-count">0</span>
-                <div class="stat-label">Total Packets</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number alert-stat" id="alert-count">0</span>
-                <div class="stat-label">Security Alerts</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number topology-stat" id="host-count">0</span>
-                <div class="stat-label">Network Hosts</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number topology-stat" id="connection-count">0</span>
-                <div class="stat-label">Connections</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number" id="capture-errors">0</span>
-                <div class="stat-label">Capture Errors</div>
-            </div>
-        </div>
-        
-        <div class="controls">
-            <label for="interface-select">Select Network Interface:</label>
-            <select id="interface-select">
-                <option value="">Loading interfaces...</option>
-            </select>
-            <button id="start-btn">Start Enhanced Monitoring</button>
-            <button id="stop-btn" disabled>Stop Monitoring</button>
-        </div>
-        
-        <div class="status">
-            <div class="status-indicator">
-                <div class="status-dot" id="status-dot"></div>
-                <span id="status-text">Ready for enhanced monitoring with diagnostics</span>
-            </div>
-        </div>
-        
-        <div class="main-content">
-            <div class="network-container">
-                <div class="network-header">
-                    🌐 Real-Time Network Topology Map
-                    <span id="topology-count" style="margin-left: auto;">0 hosts, 0 connections</span>
-                </div>
-                <div class="network-visualization">
-                    <svg class="network-svg" id="network-svg"></svg>
-                </div>
-            </div>
-            
-            <div class="alerts-packets-section">
-                <div class="alerts-container">
-                    <div class="alerts-header">
-                        🚨 Security Alerts
-                    </div>
-                    <div class="alerts-list" id="alerts-list">
-                        <div class="no-items">No security alerts yet. System ready for monitoring.</div>
-                    </div>
-                </div>
-                
-                <div class="packets-container">
-                    <div class="packets-header">
-                        📊 Network Traffic
-                    </div>
-                    <div class="packets-list" id="packets-list">
-                        <div class="no-items">No packets captured yet. Start monitoring to see network traffic.</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="tooltip" id="tooltip"></div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
-    <script>
-        console.log('🚀 Starting Diagnostic IDS...');
-        
-        const socket = io();
-        
-        // UI Elements
-        const elements = {
-            interfaceSelect: document.getElementById('interface-select'),
-            startBtn: document.getElementById('start-btn'),
-            stopBtn: document.getElementById('stop-btn'),
-            statusDot: document.getElementById('status-dot'),
-            statusText: document.getElementById('status-text'),
-            packetRate: document.getElementById('packet-rate'),
-            packetCount: document.getElementById('packet-count'),
-            alertCount: document.getElementById('alert-count'),
-            hostCount: document.getElementById('host-count'),
-            connectionCount: document.getElementById('connection-count'),
-            captureErrors: document.getElementById('capture-errors'),
-            topologyCount: document.getElementById('topology-count'),
-            packetsList: document.getElementById('packets-list'),
-            alertsList: document.getElementById('alerts-list'),
-            tooltip: document.getElementById('tooltip'),
-            diagnosticInfo: document.getElementById('diagnostic-info'),
-            diagnosticDetails: document.getElementById('diagnostic-details')
-        };
-        
-        let isCapturing = false;
-        let isTestMode = false;
-        let networkViz = null;
-        
-        // Initialize
-        window.addEventListener('load', () => {
-            loadInterfaces();
-            initializeNetworkVisualization();
-        });
-        
-        // Button events
-        elements.startBtn.addEventListener('click', startCapture);
-        elements.stopBtn.addEventListener('click', stopCapture);
-        
-        // Socket events
-        socket.on('connected', (data) => {
-            console.log('✅ Connected:', data.message);
-        });
-        
-        socket.on('packet_batch', (packets) => {
-            handlePacketBatch(packets);
-        });
-        
-        socket.on('alert_batch', (alerts) => {
-            handleAlertBatch(alerts);
-        });
-        
-        socket.on('stats_update', (data) => {
-            updateStats(data);
-        });
-        
-        socket.on('topology_update', (data) => {
-            handleTopologyUpdate(data);
-        });
-        
-        socket.on('diagnostic_info', (data) => {
-            showDiagnosticInfo(data);
-        });
-        
-        function handlePacketBatch(packets) {
-            if (!packets || packets.length === 0) return;
-            
-            const noItems = elements.packetsList.querySelector('.no-items');
-            if (noItems) {
-                elements.packetsList.innerHTML = '';
-            }
-            
-            packets.slice(0, 15).forEach(packet => {
-                const packetEl = createPacketElement(packet);
-                elements.packetsList.insertBefore(packetEl, elements.packetsList.firstChild);
-            });
-            
-            while (elements.packetsList.children.length > 30) {
-                elements.packetsList.removeChild(elements.packetsList.lastChild);
-            }
-        }
-        
-        function handleAlertBatch(alerts) {
-            if (!alerts || alerts.length === 0) return;
-            
-            console.log('🚨 Received alerts:', alerts);
-            
-            const noItems = elements.alertsList.querySelector('.no-items');
-            if (noItems) {
-                elements.alertsList.innerHTML = '';
-            }
-            
-            alerts.forEach(alert => {
-                const alertEl = createAlertElement(alert);
-                elements.alertsList.insertBefore(alertEl, elements.alertsList.firstChild);
-                playAlertSound();
-            });
-            
-            while (elements.alertsList.children.length > 20) {
-                elements.alertsList.removeChild(elements.alertsList.lastChild);
-            }
-        }
-        
-        function handleTopologyUpdate(data) {
-            if (!data || !networkViz) return;
-            
-            console.log('🌐 Topology update:', data);
-            
-            const nodes = data.nodes || [];
-            const links = data.links || [];
-            
-            elements.hostCount.textContent = nodes.length;
-            elements.connectionCount.textContent = links.length;
-            elements.topologyCount.textContent = `${nodes.length} hosts, ${links.length} connections`;
-            
-            networkViz.updateData(data);
-        }
-        
-        function updateStats(data) {
-            elements.packetCount.textContent = data.packets || 0;
-            elements.alertCount.textContent = data.alerts || 0;
-            elements.packetRate.textContent = data.packets_per_second || 0;
-            elements.captureErrors.textContent = data.capture_errors || 0;
-            
-            // Show test mode indicator
-            if (data.test_mode) {
-                isTestMode = true;
-                elements.statusDot.classList.add('test');
-                elements.statusText.textContent += ' (Test Mode - Simulated Data)';
-            }
-        }
-        
-        function showDiagnosticInfo(data) {
-            elements.diagnosticInfo.style.display = 'block';
-            elements.diagnosticDetails.innerHTML = data.message || 'Diagnostic information received';
-        }
-        
-        function createPacketElement(packet) {
-            const div = document.createElement('div');
-            div.className = 'packet';
-            
-            const protocolClass = getProtocolClass(packet.protocol);
-            
-            div.innerHTML = `
-                <div class="packet-header">
-                    <span class="packet-id">#${packet.id}</span>
-                    <span class="protocol-badge ${protocolClass}">${packet.protocol}</span>
-                    <span style="font-size: 0.8em; color: #718096;">${packet.timestamp}</span>
-                </div>
-                <div class="packet-details">
-                    ${packet.src_ip}:${packet.src_port || '?'} → ${packet.dst_ip}:${packet.dst_port || '?'}<br>
-                    Size: ${packet.size}B${packet.flags ? ' [' + packet.flags + ']' : ''}
-                    ${isTestMode ? ' <span style="color: #f59e0b;">[TEST]</span>' : ''}
-                </div>
-            `;
-            return div;
-        }
-        
-        function createAlertElement(alert) {
-            const div = document.createElement('div');
-            div.className = 'alert';
-            div.innerHTML = `
-                <div class="alert-title">${alert.rule_name}</div>
-                <div class="alert-details">
-                    [${alert.timestamp}] ${alert.severity}<br>
-                    ${alert.description}<br>
-                    ${alert.src_ip} → ${alert.dst_ip} [${alert.protocol}]
-                    ${isTestMode ? '<br><span style="color: #f59e0b;">[TEST ALERT]</span>' : ''}
-                </div>
-            `;
-            return div;
-        }
-        
-        function getProtocolClass(protocol) {
-            switch (protocol?.toLowerCase()) {
-                case 'tcp': return 'protocol-tcp';
-                case 'udp': return 'protocol-udp';
-                case 'icmp': return 'protocol-icmp';
-                default: return 'protocol-other';
-            }
-        }
-        
-        function playAlertSound() {
-            try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                oscillator.frequency.value = 800;
-                oscillator.type = 'sine';
-                
-                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-                
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.3);
-            } catch (error) {
-                console.log('Audio not available');
-            }
-        }
-        
-        async function loadInterfaces() {
-            try {
-                const response = await fetch('/interfaces');
-                const interfaces = await response.json();
-                
-                elements.interfaceSelect.innerHTML = '<option value="">Select interface...</option>';
-                interfaces.forEach(iface => {
-                    const option = document.createElement('option');
-                    option.value = iface.ip;
-                    option.textContent = `${iface.name} (${iface.ip})`;
-                    elements.interfaceSelect.appendChild(option);
-                });
-                
-                console.log(`✅ Loaded ${interfaces.length} interfaces`);
-            } catch (error) {
-                console.error('❌ Failed to load interfaces:', error);
-                elements.interfaceSelect.innerHTML = '<option value="">Failed to load interfaces</option>';
-            }
-        }
-        
-        async function startCapture() {
-            const interfaceIp = elements.interfaceSelect.value;
-            if (!interfaceIp) {
-                alert('Please select a network interface');
-                return;
-            }
-            
-            try {
-                elements.startBtn.disabled = true;
-                elements.startBtn.textContent = 'Starting...';
-                
-                const response = await fetch('/start_capture', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ interface_ip: interfaceIp })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    isCapturing = true;
-                    elements.startBtn.disabled = true;
-                    elements.stopBtn.disabled = false;
-                    elements.interfaceSelect.disabled = true;
-                    elements.statusDot.classList.add('active');
-                    
-                    if (data.message && data.message.includes('Test mode')) {
-                        elements.statusText.textContent = 'Test mode active - Generating simulated data for demonstration';
-                        elements.statusDot.classList.add('test');
-                        showDiagnosticInfo({message: '🔧 Real packet capture failed - Running in test mode with simulated data'});
-                    } else {
-                        elements.statusText.textContent = 'Enhanced IDS monitoring active - Real packet capture enabled';
-                    }
-                    
-                    elements.packetsList.innerHTML = '<div class="no-items">Starting capture...</div>';
-                    elements.alertsList.innerHTML = '<div class="no-items">Monitoring for threats...</div>';
-                    
-                    console.log('✅ Capture started');
-                } else {
-                    alert('Failed to start capture: ' + data.message);
-                    elements.startBtn.disabled = false;
-                }
-                
-                elements.startBtn.textContent = 'Start Enhanced Monitoring';
-            } catch (error) {
-                console.error('❌ Error starting capture:', error);
-                alert('Error starting capture: ' + error.message);
-                elements.startBtn.disabled = false;
-                elements.startBtn.textContent = 'Start Enhanced Monitoring';
-            }
-        }
-        
-        async function stopCapture() {
-            try {
-                const response = await fetch('/stop_capture', { method: 'POST' });
-                
-                isCapturing = false;
-                isTestMode = false;
-                elements.startBtn.disabled = false;
-                elements.stopBtn.disabled = true;
-                elements.interfaceSelect.disabled = false;
-                elements.statusDot.classList.remove('active', 'test');
-                elements.statusText.textContent = 'Enhanced IDS stopped';
-                elements.diagnosticInfo.style.display = 'none';
-                
-                console.log('✅ Capture stopped');
-            } catch (error) {
-                console.error('❌ Error stopping capture:', error);
-            }
-        }
-        
-        function initializeNetworkVisualization() {
-            networkViz = new NetworkVisualization();
-        }
-        
-        class NetworkVisualization {
-            constructor() {
-                this.svg = d3.select('#network-svg');
-                this.width = 800;
-                this.height = 500;
-                this.nodes = [];
-                this.links = [];
-                
-                this.setup();
-            }
-            
-            setup() {
-                this.svg.attr('viewBox', `0 0 ${this.width} ${this.height}`);
-                
-                this.simulation = d3.forceSimulation()
-                    .force('link', d3.forceLink().id(d => d.id).distance(100))
-                    .force('charge', d3.forceManyBody().strength(-300))
-                    .force('center', d3.forceCenter(this.width / 2, this.height / 2));
-                
-                this.linkGroup = this.svg.append('g').attr('class', 'links');
-                this.nodeGroup = this.svg.append('g').attr('class', 'nodes');
-            }
-            
-            updateData(data) {
-                this.nodes = data.nodes || [];
-                this.links = data.links || [];
-                
-                this.render();
-            }
-            
-            render() {
-                const link = this.linkGroup.selectAll('.link')
-                    .data(this.links, d => `${d.source}-${d.target}`);
-                
-                link.exit().remove();
-                
-                link.enter()
-                    .append('line')
-                    .attr('class', 'link')
-                    .merge(link)
-                    .attr('stroke', d => this.getLinkColor(d))
-                    .attr('stroke-width', d => this.getLinkWidth(d));
-                
-                const node = this.nodeGroup.selectAll('.node')
-                    .data(this.nodes, d => d.id);
-                
-                node.exit().remove();
-                
-                const nodeEnter = node.enter()
-                    .append('g')
-                    .attr('class', 'node');
-                
-                nodeEnter.append('circle')
-                    .attr('r', 12)
-                    .attr('fill', d => this.getNodeColor(d))
-                    .attr('stroke', '#fff')
-                    .attr('stroke-width', 2);
-                
-                nodeEnter.append('text')
-                    .attr('class', 'node-label')
-                    .attr('dy', 20)
-                    .text(d => this.getNodeLabel(d));
-                
-                const nodeUpdate = nodeEnter.merge(node);
-                
-                nodeUpdate.select('circle')
-                    .attr('fill', d => this.getNodeColor(d))
-                    .attr('r', d => this.getNodeSize(d));
-                
-                nodeUpdate
-                    .on('mouseover', (event, d) => this.showTooltip(event, d))
-                    .on('mouseout', () => this.hideTooltip());
-                
-                this.simulation.nodes(this.nodes);
-                this.simulation.force('link').links(this.links);
-                this.simulation.alpha(0.3).restart();
-                
-                this.simulation.on('tick', () => {
-                    this.linkGroup.selectAll('.link')
-                        .attr('x1', d => d.source.x)
-                        .attr('y1', d => d.source.y)
-                        .attr('x2', d => d.target.x)
-                        .attr('y2', d => d.target.y);
-                    
-                    nodeUpdate
-                        .attr('transform', d => `translate(${d.x},${d.y})`);
-                });
-            }
-            
-            getNodeColor(node) {
-                if (node.threat_level > 50 || node.alert_count > 0) {
-                    return '#ef4444';
-                }
-                if (node.host_type === 'router') {
-                    return '#f59e0b';
-                }
-                if (node.is_internal) {
-                    return '#10b981';
-                }
-                return '#3b82f6';
-            }
-            
-            getNodeSize(node) {
-                const baseSize = 12;
-                if (node.threat_level > 50) return baseSize * 1.5;
-                if (node.activity_level === 'high') return baseSize * 1.3;
-                return baseSize;
-            }
-            
-            getNodeLabel(node) {
-                const parts = node.ip_address.split('.');
-                if (parts.length === 4) {
-                    return `${parts[2]}.${parts[3]}`;
-                }
-                return node.ip_address.substring(0, 8);
-            }
-            
-            getLinkColor(link) {
-                if (link.threat_score > 50) {
-                    return '#ef4444';
-                }
-                switch (link.bandwidth_category) {
-                    case 'high': return '#3b82f6';
-                    case 'medium': return '#10b981';
-                    default: return '#94a3b8';
-                }
-            }
-            
-            getLinkWidth(link) {
-                switch (link.bandwidth_category) {
-                    case 'high': return 3;
-                    case 'medium': return 2;
-                    default: return 1;
-                }
-            }
-            
-            showTooltip(event, node) {
-                const content = `
-                    <strong>${node.ip_address}</strong><br>
-                    Type: ${node.host_type}<br>
-                    Packets: ${node.packet_count}<br>
-                    Activity: ${node.activity_level}<br>
-                    Threat Level: ${node.threat_level}%<br>
-                    Alerts: ${node.alert_count}
-                    ${isTestMode ? '<br><span style="color: #f59e0b;">[TEST DATA]</span>' : ''}
-                `;
-                
-                elements.tooltip.innerHTML = content;
-                elements.tooltip.style.left = (event.pageX + 10) + 'px';
-                elements.tooltip.style.top = (event.pageY - 10) + 'px';
-                elements.tooltip.classList.add('show');
-            }
-            
-            hideTooltip() {
-                elements.tooltip.classList.remove('show');
-            }
-        }
-        
-        console.log('✅ Diagnostic JavaScript initialized');
-    </script>
-</body>
-</html>'''
-
-# =============================================================================
-# FLASK ROUTES
-# =============================================================================
+packet_capture = HighPerformancePacketCapture()
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template('index_optimized.html')
 
 @app.route('/interfaces')
 def get_interfaces():
@@ -1551,24 +1023,36 @@ def start_capture():
     captured_packets.clear()
     alerts.clear()
     
-    # Start capture with diagnostics
-    success, message = packet_capture.start_capture(interface_ip)
-    if success:
+    # Clear queues
+    while not packet_queue.empty():
+        try:
+            packet_queue.get_nowait()
+        except queue.Empty:
+            break
+    
+    while not alert_queue.empty():
+        try:
+            alert_queue.get_nowait()
+        except queue.Empty:
+            break
+    
+    # Start capture
+    result = packet_capture.start_capture(interface_ip)
+    if result is True:
         is_capturing = True
+        capture_thread = threading.Thread(target=packet_capture.capture_packets)
+        capture_thread.daemon = True
+        capture_thread.start()
         
-        # Start real capture thread only if not in test mode
-        if not packet_capture.generate_test_data:
-            capture_thread = threading.Thread(target=packet_capture.capture_packets)
-            capture_thread.daemon = True
-            capture_thread.start()
-        
+        status = "with YARA support" if YARA_AVAILABLE else "traditional rules only"
         return jsonify({
             'success': True, 
-            'message': message or 'Enhanced IDS started successfully',
-            'test_mode': packet_capture.generate_test_data
+            'message': f'High-Performance IDS started {status}',
+            'environment': CONFIG['environment'],
+            'performance_target': '500+ packets/second'
         })
     else:
-        return jsonify({'success': False, 'message': f'Failed to start: {message}'})
+        return jsonify({'success': False, 'message': f'Failed to start: {result[1]}'})
 
 @app.route('/stop_capture', methods=['POST'])
 def stop_capture():
@@ -1582,52 +1066,52 @@ def stop_capture():
     
     return jsonify({
         'success': True, 
-        'message': 'Enhanced IDS stopped',
+        'message': 'High-Performance IDS stopped',
         'stats': packet_capture.packet_stats
     })
 
 @app.route('/packets')
 def get_packets():
-    return jsonify(list(captured_packets)[-50:])
+    return jsonify(list(captured_packets)[-100:])
 
 @app.route('/alerts')
 def get_alerts():
     return jsonify(list(alerts))
 
-@app.route('/topology')
-def get_topology():
-    try:
-        topology_data = packet_capture.topology_tracker.get_topology_data()
-        return jsonify(topology_data)
-    except Exception as e:
-        logger.error(f"Error getting topology: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/diagnostics')
-def get_diagnostics():
-    """Get system diagnostic information"""
-    try:
-        issues, solutions = check_system_requirements()
-        
-        # Get network interface details
-        interfaces = packet_capture.get_network_interfaces()
-        
-        diagnostic_info = {
-            'system_issues': issues,
-            'solutions': solutions,
-            'interfaces_available': len(interfaces),
-            'interfaces': interfaces[:5],  # Show first 5
-            'platform': platform.system(),
-            'python_version': platform.python_version(),
-            'capture_stats': packet_capture.packet_stats,
-            'test_mode': packet_capture.generate_test_data
+@app.route('/rules')
+def get_rules():
+    """Get IDS rules status"""
+    rule_status = []
+    
+    for rule in packet_capture.ids_engine.rules:
+        status = {
+            'name': rule.name,
+            'description': rule.description,
+            'severity': rule.severity,
+            'enabled': rule.enabled,
+            'trigger_count': rule.trigger_count,
+            'last_triggered': rule.last_triggered.strftime("%H:%M:%S") if rule.last_triggered else None,
+            'type': 'Traditional'
         }
-        
-        return jsonify(diagnostic_info)
-        
-    except Exception as e:
-        logger.error(f"Error getting diagnostics: {e}")
-        return jsonify({'error': str(e)}), 500
+        rule_status.append(status)
+    
+    return jsonify(rule_status)
+
+@app.route('/performance')
+def get_performance():
+    """Get performance metrics"""
+    return jsonify({
+        'ids_metrics': packet_capture.ids_engine.metrics,
+        'queue_sizes': {
+            'packets': packet_queue.qsize(),
+            'alerts': alert_queue.qsize()
+        },
+        'memory_usage': {
+            'packets': len(captured_packets),
+            'alerts': len(alerts)
+        },
+        'capture_stats': packet_capture.packet_stats
+    })
 
 # =============================================================================
 # WEBSOCKET HANDLERS
@@ -1635,109 +1119,129 @@ def get_diagnostics():
 
 @socketio.on('connect')
 def handle_connect():
-    logger.info("🔌 Client connected")
+    status = "with YARA support" if YARA_AVAILABLE else "(YARA not available)"
     emit('connected', {
-        'message': 'Connected to Diagnostic IDS server',
-        'diagnostic_mode': True
+        'message': f'Connected to High-Performance IDS server {status}',
+        'environment': CONFIG['environment'],
+        'config': CONFIG,
+        'performance_info': 'Optimized for 500+ packets/second with attack detection'
     })
-    
-    # Send diagnostic information
-    try:
-        issues, solutions = check_system_requirements()
-        if issues:
-            diagnostic_message = f"⚠️ {len(issues)} system issues detected. Check console for details."
-            emit('diagnostic_info', {'message': diagnostic_message})
-    except Exception as e:
-        logger.error(f"Error sending diagnostic info: {e}")
-
-@socketio.on('request_topology')
-def handle_topology_request():
-    try:
-        topology_data = packet_capture.topology_tracker.get_topology_data()
-        emit('topology_update', topology_data)
-    except Exception as e:
-        logger.error(f"Error sending topology: {e}")
-
-@socketio.on('request_diagnostics')
-def handle_diagnostics_request():
-    try:
-        issues, solutions = check_system_requirements()
-        diagnostic_info = {
-            'issues': issues,
-            'solutions': solutions,
-            'timestamp': datetime.now().isoformat()
-        }
-        emit('diagnostic_info', diagnostic_info)
-    except Exception as e:
-        logger.error(f"Error sending diagnostics: {e}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    logger.info("🔌 Client disconnected")
+    pass
 
 # =============================================================================
 # MAIN APPLICATION
 # =============================================================================
 
+@app.route('/topology')
+def topology_page():
+    """Serve the network topology visualization page"""
+    return render_template('network_topology.html')
+
+@app.route('/api/topology/data')
+def get_topology_data():
+    """Get current network topology data"""
+    return jsonify(get_network_topology_data())
+
+@app.route('/api/topology/config', methods=['POST'])
+def topology_config():
+    """Update topology configuration"""
+    data = request.get_json()
+    with topology_lock:
+        if 'max_nodes' in data:
+            network_topology['max_nodes'] = int(data['max_nodes'])
+    return jsonify({'success': True})
+
+
+
+@app.route('/api/topology/cleanup', methods=['POST'])
+def manual_topology_cleanup():
+    """Manually trigger topology cleanup"""
+    try:
+        with topology_lock:
+            current_time = time.time()
+            cleanup_threshold = current_time - network_topology['cleanup_interval']
+            
+            # Remove old nodes - FIX: Check for None values
+            nodes_to_remove = []
+            for ip, node_data in network_topology['nodes'].items():
+                last_seen = node_data.get('last_seen')
+                if not last_seen or last_seen < cleanup_threshold:
+                    nodes_to_remove.append(ip)
+            
+            for ip in nodes_to_remove:
+                del network_topology['nodes'][ip]
+                network_topology['threat_ips'].discard(ip)
+            
+            # Remove old edges - FIX: Check for None values
+            edges_to_remove = []
+            for edge_key, edge_data in network_topology['edges'].items():
+                last_seen = edge_data.get('last_seen')
+                if not last_seen or last_seen < cleanup_threshold:
+                    edges_to_remove.append(edge_key)
+            
+            for edge_key in edges_to_remove:
+                del network_topology['edges'][edge_key]
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Cleanup completed: {len(nodes_to_remove)} nodes, {len(edges_to_remove)} edges removed'
+        })
+    except Exception as e:
+        print(f"Cleanup error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+
+
+@socketio.on('topology_subscribe')
+def handle_topology_subscription():
+    """Handle client subscription to topology updates"""
+    emit('topology_subscribed', {'message': 'Subscribed to topology updates'})
+
+
+
 if __name__ == '__main__':
-    print("=" * 80)
-    print("🛡️  DIAGNOSTIC HIGH-PERFORMANCE IDS WITH TROUBLESHOOTING")
-    print("=" * 80)
-    print("This version includes comprehensive diagnostics to identify and resolve")
-    print("packet capture issues. If real packet capture fails, it will automatically")
-    print("fall back to test mode with simulated data.")
-    print()
-    print("Features:")
-    print("• Automatic system requirement checking")
-    print("• Raw socket capability testing")
-    print("• Permission and privilege diagnostics")
-    print("• Automatic fallback to test mode")
-    print("• Real-time network topology visualization")
-    print("• Simulated attack detection for testing")
-    print("• Enhanced error reporting and solutions")
-    print("=" * 80)
-    print()
-    
-    # Run initial diagnostics
-    print("🔍 Running initial system diagnostics...")
-    issues, solutions = check_system_requirements()
-    
-    if issues:
-        print(f"⚠️  Found {len(issues)} potential issues:")
-        for i, issue in enumerate(issues, 1):
-            print(f"   {i}. {issue}")
-        print()
-        print("💡 Suggested solutions:")
-        for i, solution in enumerate(solutions, 1):
-            print(f"   {i}. {solution}")
-        print()
-        print("🔄 The system will attempt to run anyway and fall back to test mode if needed.")
-    else:
-        print("✅ All system requirements appear to be met!")
-    
-    print("=" * 80)
+    print("=" * 70)
+    print("🛡️  HIGH-PERFORMANCE INTRUSION DETECTION SYSTEM (FIXED)")
+    print("=" * 70)
+    print("Performance Optimizations:")
+    print("• Target: 500+ packets/second processing")
+    print("• Multiple background processing threads")
+    print("• Optimized packet parsing and analysis")
+    print("• Large batches and fast UI updates")
+    print("• Reduced rate limiting for testing")
+    print("Attack Detection Optimizations:")
+    print("• FIXED: DDoS rule is now more specific to avoid false positives")
+    print("• REMOVED IP whitelisting (detects all external IPs)")
+    print("• REDUCED detection thresholds for testing")
+    print("• Enhanced logging for debugging")
+    print("• Optimized for test script IP ranges")
+    if YARA_AVAILABLE:
+        print("• YARA pattern matching enabled")
+    print("=" * 70)
     print(f"🌐 Web Interface: http://localhost:5000")
-    print("📊 The system will show either real or simulated data")
-    print("🔧 Check the diagnostic panel for detailed system information")
-    print("=" * 80)
+    print(f"🔧 Environment: {CONFIG['environment']}")
+    print(f"📊 Batch Size: {CONFIG['batch_size']}")
+    print(f"⏱️  Update Interval: {CONFIG['update_interval']}s")
+    print(f"🎯 DDoS Threshold: 100 packets/30s")
+    print(f"🎯 Port Scan Threshold: 15 ports/60s")
+    print(f"🎯 Brute Force Threshold: 30 attempts/5min")
+    print(f"🎯 DNS Tunneling Threshold: 50 queries/60s")
+    print("=" * 70)
+    print("⚠️  Remember to run as Administrator/sudo for packet capture!")
+    print("🧪 Ready for attack testing - all detection optimized!")
+    print("=" * 70)
     
     try:
-        # Create debug log
-        logger.info("🚀 Starting Diagnostic IDS System")
-        logger.info(f"Platform: {platform.system()} {platform.release()}")
-        logger.info(f"Python: {platform.python_version()}")
-        
-        socketio.run(app, debug=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
-        
+        socketio.run(app, debug=CONFIG['debug_mode'], host='0.0.0.0', port=5000)
     except KeyboardInterrupt:
-        print("\n👋 Diagnostic IDS shutdown requested")
+        print("\n👋 High-Performance IDS shutdown requested")
         if is_capturing:
             packet_capture.stop_capture()
-        print("✅ System stopped cleanly")
-        
+        print("✅ High-Performance IDS stopped cleanly")
     except Exception as e:
         print(f"❌ Critical error: {e}")
-        logger.error(f"Critical error: {e}", exc_info=True)
         if is_capturing:
             packet_capture.stop_capture()
-        sys.exit(1)

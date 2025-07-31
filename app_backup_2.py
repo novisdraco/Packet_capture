@@ -103,17 +103,61 @@ def mark_threat_ip(ip_address):
 
 # Replace the get_network_topology_data function with this fixed version:
 
+
+
+
+# Replace the get_network_topology_data function in app.py (around line 85-150) with this fixed version:
+
 def get_network_topology_data():
-    """Get current network topology data for visualization"""
+    """Get current network topology data for visualization - FIXED cleanup logic"""
     with topology_lock:
         current_time = time.time()
         cleanup_threshold = current_time - network_topology['cleanup_interval']
         
-        # Get active nodes - FIX: Check for None values
+        # FIX 1: Properly cleanup old nodes BEFORE processing
+        nodes_to_remove = []
+        for ip, node_data in list(network_topology['nodes'].items()):  # Convert to list to avoid runtime error
+            last_seen = node_data.get('last_seen')
+            if not last_seen or last_seen < cleanup_threshold:
+                nodes_to_remove.append(ip)
+        
+        # Remove old nodes
+        for ip in nodes_to_remove:
+            if ip in network_topology['nodes']:
+                del network_topology['nodes'][ip]
+            network_topology['threat_ips'].discard(ip)
+        
+        # FIX 2: Cleanup old edges BEFORE processing
+        edges_to_remove = []
+        for edge_key, edge_data in list(network_topology['edges'].items()):  # Convert to list
+            last_seen = edge_data.get('last_seen')
+            if not last_seen or last_seen < cleanup_threshold:
+                edges_to_remove.append(edge_key)
+        
+        # Remove old edges
+        for edge_key in edges_to_remove:
+            if edge_key in network_topology['edges']:
+                del network_topology['edges'][edge_key]
+        
+        # FIX 3: Cleanup old connections
+        connections_to_remove = []
+        for connection_key in list(network_topology['connection_stats'].keys()):
+            # Check if both IPs in the connection still exist
+            if len(connection_key) >= 2:
+                ip1, ip2 = connection_key[0], connection_key[1]
+                if ip1 not in network_topology['nodes'] or ip2 not in network_topology['nodes']:
+                    connections_to_remove.append(connection_key)
+        
+        # Remove old connections
+        for connection_key in connections_to_remove:
+            if connection_key in network_topology['connection_stats']:
+                del network_topology['connection_stats'][connection_key]
+        
+        # NOW get active nodes (after cleanup)
         active_nodes = []
         for ip, node_data in network_topology['nodes'].items():
             last_seen = node_data.get('last_seen')
-            if last_seen and last_seen > cleanup_threshold:
+            if last_seen and last_seen > cleanup_threshold:  # Should all pass now since we cleaned up
                 active_nodes.append({
                     'id': ip,
                     'packet_count': node_data.get('packet_count', 0),
@@ -128,13 +172,13 @@ def get_network_topology_data():
         top_nodes = active_nodes[:network_topology['max_nodes']]
         top_node_ips = {node['id'] for node in top_nodes}
         
-        # Get active edges - FIX: Check for None values
+        # Get active edges (after cleanup)
         active_edges = []
         for edge_key, edge_data in network_topology['edges'].items():
             last_seen = edge_data.get('last_seen')
-            if last_seen and last_seen > cleanup_threshold:
+            if last_seen and last_seen > cleanup_threshold:  # Should all pass now
                 try:
-                    src_ip, dst_ip = edge_key.split('->', 1)  # Use maxsplit=1 for safety
+                    src_ip, dst_ip = edge_key.split('->', 1)
                     if src_ip in top_node_ips and dst_ip in top_node_ips:
                         active_edges.append({
                             'id': edge_key,
@@ -148,10 +192,10 @@ def get_network_topology_data():
                     # Skip malformed edge keys
                     continue
         
-        # Get top connections
+        # Get top connections (after cleanup)
         top_connections = []
         for connection_key, count in network_topology['connection_stats'].items():
-            if len(connection_key) >= 2:  # Safety check
+            if len(connection_key) >= 2:
                 ip1, ip2 = connection_key[0], connection_key[1]
                 if ip1 in top_node_ips or ip2 in top_node_ips:
                     is_threat = ip1 in network_topology['threat_ips'] or ip2 in network_topology['threat_ips']
@@ -163,6 +207,8 @@ def get_network_topology_data():
         
         top_connections.sort(key=lambda x: x['count'], reverse=True)
         
+        print(f"🧹 Cleanup completed: Removed {len(nodes_to_remove)} nodes, {len(edges_to_remove)} edges, {len(connections_to_remove)} connections")
+        
         return {
             'nodes': top_nodes,
             'edges': active_edges,
@@ -171,9 +217,18 @@ def get_network_topology_data():
                 'total_nodes': len(network_topology['nodes']),
                 'total_edges': len(network_topology['edges']),
                 'threat_count': len(network_topology['threat_ips']),
-                'active_nodes': len(active_nodes)
+                'active_nodes': len(active_nodes),
+                'cleanup_removed': {
+                    'nodes': len(nodes_to_remove),
+                    'edges': len(edges_to_remove),
+                    'connections': len(connections_to_remove)
+                }
             }
         }
+
+
+
+
 
 # YARA integration (optional)
 try:
@@ -1156,42 +1211,116 @@ def topology_config():
 
 
 
+# Replace the manual_topology_cleanup route in app.py (around line 580-620) with this fixed version:
+
 @app.route('/api/topology/cleanup', methods=['POST'])
 def manual_topology_cleanup():
-    """Manually trigger topology cleanup"""
+    """Manually trigger topology cleanup - FIXED version"""
     try:
         with topology_lock:
             current_time = time.time()
-            cleanup_threshold = current_time - network_topology['cleanup_interval']
+            # Use a more aggressive cleanup threshold for manual cleanup (2x normal interval)
+            cleanup_threshold = current_time - (network_topology['cleanup_interval'] * 2)
             
-            # Remove old nodes - FIX: Check for None values
+            # FIX 1: Cleanup nodes with proper iteration
             nodes_to_remove = []
-            for ip, node_data in network_topology['nodes'].items():
+            for ip, node_data in list(network_topology['nodes'].items()):
                 last_seen = node_data.get('last_seen')
                 if not last_seen or last_seen < cleanup_threshold:
                     nodes_to_remove.append(ip)
             
+            # Remove nodes
+            nodes_removed = 0
             for ip in nodes_to_remove:
-                del network_topology['nodes'][ip]
+                if ip in network_topology['nodes']:
+                    del network_topology['nodes'][ip]
+                    nodes_removed += 1
                 network_topology['threat_ips'].discard(ip)
             
-            # Remove old edges - FIX: Check for None values
+            # FIX 2: Cleanup edges with proper iteration
             edges_to_remove = []
-            for edge_key, edge_data in network_topology['edges'].items():
+            for edge_key, edge_data in list(network_topology['edges'].items()):
                 last_seen = edge_data.get('last_seen')
                 if not last_seen or last_seen < cleanup_threshold:
                     edges_to_remove.append(edge_key)
+                else:
+                    # Also remove edges where nodes no longer exist
+                    try:
+                        src_ip, dst_ip = edge_key.split('->', 1)
+                        if src_ip not in network_topology['nodes'] or dst_ip not in network_topology['nodes']:
+                            edges_to_remove.append(edge_key)
+                    except ValueError:
+                        edges_to_remove.append(edge_key)  # Remove malformed edges
             
+            # Remove edges
+            edges_removed = 0
             for edge_key in edges_to_remove:
-                del network_topology['edges'][edge_key]
+                if edge_key in network_topology['edges']:
+                    del network_topology['edges'][edge_key]
+                    edges_removed += 1
+            
+            # FIX 3: Cleanup connection stats
+            connections_to_remove = []
+            for connection_key in list(network_topology['connection_stats'].keys()):
+                if len(connection_key) >= 2:
+                    ip1, ip2 = connection_key[0], connection_key[1]
+                    # Remove if either IP no longer exists
+                    if ip1 not in network_topology['nodes'] or ip2 not in network_topology['nodes']:
+                        connections_to_remove.append(connection_key)
+                else:
+                    # Remove malformed connection keys
+                    connections_to_remove.append(connection_key)
+            
+            # Remove connections
+            connections_removed = 0
+            for connection_key in connections_to_remove:
+                if connection_key in network_topology['connection_stats']:
+                    del network_topology['connection_stats'][connection_key]
+                    connections_removed += 1
+            
+            # FIX 4: Also cleanup orphaned threat IPs
+            threat_ips_to_remove = []
+            for threat_ip in list(network_topology['threat_ips']):
+                if threat_ip not in network_topology['nodes']:
+                    threat_ips_to_remove.append(threat_ip)
+            
+            threats_removed = 0
+            for threat_ip in threat_ips_to_remove:
+                network_topology['threat_ips'].discard(threat_ip)
+                threats_removed += 1
+            
+            # FIX 5: Reset node connections (remove references to deleted nodes)
+            for ip, node_data in network_topology['nodes'].items():
+                if 'connections' in node_data and isinstance(node_data['connections'], set):
+                    # Remove connections to nodes that no longer exist
+                    valid_connections = {conn for conn in node_data['connections'] 
+                                       if conn in network_topology['nodes']}
+                    node_data['connections'] = valid_connections
+        
+        cleanup_summary = {
+            'nodes_removed': nodes_removed,
+            'edges_removed': edges_removed,
+            'connections_removed': connections_removed,
+            'threats_removed': threats_removed,
+            'remaining_nodes': len(network_topology['nodes']),
+            'remaining_edges': len(network_topology['edges']),
+            'remaining_connections': len(network_topology['connection_stats']),
+            'remaining_threats': len(network_topology['threat_ips'])
+        }
+        
+        print(f"🧹 Manual cleanup completed: {cleanup_summary}")
         
         return jsonify({
             'success': True, 
-            'message': f'Cleanup completed: {len(nodes_to_remove)} nodes, {len(edges_to_remove)} edges removed'
+            'message': f'Cleanup completed: {nodes_removed} nodes, {edges_removed} edges, {connections_removed} connections removed',
+            'details': cleanup_summary
         })
+        
     except Exception as e:
         print(f"Cleanup error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e), 'details': 'Check server logs for full error'})
 
 
 
@@ -1233,15 +1362,108 @@ if __name__ == '__main__':
     print("⚠️  Remember to run as Administrator/sudo for packet capture!")
     print("🧪 Ready for attack testing - all detection optimized!")
     print("=" * 70)
+
+
+
+            # Add this function and thread to app.py to enable automatic cleanup
+
+import threading
+import time
+
+def automatic_topology_cleanup():
+    """Background thread that automatically cleans up old topology data"""
+    print("🧹 Starting automatic topology cleanup thread...")
     
-    try:
-        socketio.run(app, debug=CONFIG['debug_mode'], host='0.0.0.0', port=5000)
-    except KeyboardInterrupt:
-        print("\n👋 High-Performance IDS shutdown requested")
-        if is_capturing:
-            packet_capture.stop_capture()
-        print("✅ High-Performance IDS stopped cleanly")
-    except Exception as e:
-        print(f"❌ Critical error: {e}")
-        if is_capturing:
-            packet_capture.stop_capture()
+    while True:
+        try:
+            # Wait for cleanup interval (e.g., every 60 seconds)
+            time.sleep(60)  # Run cleanup every minute
+            
+            with topology_lock:
+                current_time = time.time()
+                cleanup_threshold = current_time - network_topology['cleanup_interval']
+                
+                # Count items before cleanup
+                nodes_before = len(network_topology['nodes'])
+                edges_before = len(network_topology['edges'])
+                connections_before = len(network_topology['connection_stats'])
+                
+                # Cleanup old nodes
+                nodes_to_remove = []
+                for ip, node_data in list(network_topology['nodes'].items()):
+                    last_seen = node_data.get('last_seen')
+                    if not last_seen or last_seen < cleanup_threshold:
+                        nodes_to_remove.append(ip)
+                
+                for ip in nodes_to_remove:
+                    if ip in network_topology['nodes']:
+                        del network_topology['nodes'][ip]
+                    network_topology['threat_ips'].discard(ip)
+                
+                # Cleanup old edges
+                edges_to_remove = []
+                for edge_key, edge_data in list(network_topology['edges'].items()):
+                    last_seen = edge_data.get('last_seen')
+                    if not last_seen or last_seen < cleanup_threshold:
+                        edges_to_remove.append(edge_key)
+                    else:
+                        # Remove edges where nodes no longer exist
+                        try:
+                            src_ip, dst_ip = edge_key.split('->', 1)
+                            if src_ip not in network_topology['nodes'] or dst_ip not in network_topology['nodes']:
+                                edges_to_remove.append(edge_key)
+                        except ValueError:
+                            edges_to_remove.append(edge_key)
+                
+                for edge_key in edges_to_remove:
+                    if edge_key in network_topology['edges']:
+                        del network_topology['edges'][edge_key]
+                
+                # Cleanup orphaned connections
+                connections_to_remove = []
+                for connection_key in list(network_topology['connection_stats'].keys()):
+                    if len(connection_key) >= 2:
+                        ip1, ip2 = connection_key[0], connection_key[1]
+                        if ip1 not in network_topology['nodes'] or ip2 not in network_topology['nodes']:
+                            connections_to_remove.append(connection_key)
+                
+                for connection_key in connections_to_remove:
+                    if connection_key in network_topology['connection_stats']:
+                        del network_topology['connection_stats'][connection_key]
+                
+                # Log cleanup results if significant
+                nodes_removed = len(nodes_to_remove)
+                edges_removed = len(edges_to_remove)
+                connections_removed = len(connections_to_remove)
+                
+                if nodes_removed > 0 or edges_removed > 0 or connections_removed > 0:
+                    print(f"🧹 Auto-cleanup: -{nodes_removed} nodes, -{edges_removed} edges, -{connections_removed} connections")
+                    print(f"📊 Remaining: {len(network_topology['nodes'])} nodes, {len(network_topology['edges'])} edges")
+                
+        except Exception as e:
+            print(f"❌ Auto-cleanup error: {e}")
+            # Continue running even if there's an error
+            continue
+
+# Add this to the main section of app.py (at the bottom, before socketio.run):
+
+# Start automatic cleanup thread
+cleanup_thread = threading.Thread(target=automatic_topology_cleanup, daemon=True)
+cleanup_thread.start()
+print("✅ Automatic topology cleanup thread started")
+
+
+
+
+    
+try:
+    socketio.run(app, debug=CONFIG['debug_mode'], host='0.0.0.0', port=5000)
+except KeyboardInterrupt:
+    print("\n👋 High-Performance IDS shutdown requested")
+    if is_capturing:
+        packet_capture.stop_capture()
+    print("✅ High-Performance IDS stopped cleanly")
+except Exception as e:
+    print(f"❌ Critical error: {e}")
+    if is_capturing:
+        packet_capture.stop_capture()
