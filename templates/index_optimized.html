@@ -126,6 +126,48 @@
             margin-bottom: 15px;
             font-size: 0.9rem;
         }
+
+        .filter-controls {
+            background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(56, 161, 105, 0.05) 100%);
+            border: 1px solid rgba(72, 187, 120, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .filter-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .filter-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+
+        .filter-stat {
+            text-align: center;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        .filter-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #48bb78;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .filter-indicator.disabled {
+            background: #e2e8f0;
+        }
         
         .controls {
             background: rgba(255, 255, 255, 0.95);
@@ -511,7 +553,7 @@
     <div class="container">
         <div class="header">
             <h1>🛡️ High-Performance IDS<span class="performance-badge" id="perf-badge">500+ PPS READY</span></h1>
-            <p class="subtitle">Real-time packet capture with high-speed attack detection</p>
+            <p class="subtitle">Real-time packet capture with high-speed attack detection • Smart filtering enabled for demonstration mode</p>
         </div>
         
         <div class="dashboard">
@@ -548,6 +590,33 @@
         <div class="controls">
             <div class="performance-stats" id="performance-stats">
                 <strong>Performance:</strong> Ready for high-speed attack detection (500+ packets/second)
+            </div>
+
+            <div class="filter-controls" id="filter-controls">
+                <div class="filter-toggle">
+                    <label style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="smart-filter-toggle" checked>
+                        <span class="filter-indicator" id="filter-indicator"></span>
+                        <strong>Smart Filtering (Bypass MS Teams/Apps)</strong>
+                    </label>
+                    <button onclick="toggleTestMode()" id="test-mode-btn" style="padding: 4px 8px; font-size: 0.8rem; width: auto;">
+                        Test Mode: ON
+                    </button>
+                </div>
+                <div class="filter-stats" id="filter-stats">
+                    <div class="filter-stat">
+                        <div style="font-weight: 600; color: #48bb78;">0</div>
+                        <div>Allowed</div>
+                    </div>
+                    <div class="filter-stat">
+                        <div style="font-weight: 600; color: #e53e3e;">0</div>
+                        <div>Filtered</div>
+                    </div>
+                    <div class="filter-stat">
+                        <div style="font-weight: 600; color: #667eea;">0%</div>
+                        <div>Blocked</div>
+                    </div>
+                </div>
             </div>
             
             <div class="control-group">
@@ -653,6 +722,68 @@
         const alertPerformance = document.getElementById('alert-performance');
         const packetPerformance = document.getElementById('packet-performance');
         
+        // Smart Filtering JavaScript
+        let smartFilterEnabled = true;
+        let testModeEnabled = true;
+
+        // Filter control event handlers
+        document.getElementById('smart-filter-toggle').addEventListener('change', function(e) {
+            smartFilterEnabled = e.target.checked;
+            updateFilterConfig();
+            updateFilterIndicator();
+        });
+
+        function toggleTestMode() {
+            testModeEnabled = !testModeEnabled;
+            document.getElementById('test-mode-btn').textContent = `Test Mode: ${testModeEnabled ? 'ON' : 'OFF'}`;
+            updateFilterConfig();
+        }
+
+        function updateFilterConfig() {
+            fetch('/api/filter/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    enable_smart_filtering: smartFilterEnabled,
+                    enable_test_prioritization: testModeEnabled
+                })
+            }).catch(error => console.error('Filter config update failed:', error));
+        }
+
+        function updateFilterIndicator() {
+            const indicator = document.getElementById('filter-indicator');
+            if (smartFilterEnabled) {
+                indicator.classList.remove('disabled');
+            } else {
+                indicator.classList.add('disabled');
+            }
+        }
+
+        // Update filter statistics display
+        function updateFilterStats(filterStats) {
+            if (!filterStats) return;
+            
+            const statsDiv = document.getElementById('filter-stats');
+            statsDiv.innerHTML = `
+                <div class="filter-stat">
+                    <div style="font-weight: 600; color: #48bb78;">${filterStats.allowed_packets || 0}</div>
+                    <div>Allowed</div>
+                </div>
+                <div class="filter-stat">
+                    <div style="font-weight: 600; color: #e53e3e;">${filterStats.blocked_packets || 0}</div>
+                    <div>Filtered</div>
+                </div>
+                <div class="filter-stat">
+                    <div style="font-weight: 600; color: #667eea;">${filterStats.blocked_percentage || 0}%</div>
+                    <div>Blocked</div>
+                </div>
+                <div class="filter-stat">
+                    <div style="font-weight: 600; color: #4a5568;">${filterStats.total_packets || 0}</div>
+                    <div>Total</div>
+                </div>
+            `;
+        }
+        
         // Performance tracking
         let stats = {
             packets: 0,
@@ -680,6 +811,7 @@
             console.log('🌐 High-performance interface loaded');
             loadInterfaces();
             updatePerformanceDisplay();
+            updateFilterIndicator();
         });
         
         // Button event listeners
@@ -886,8 +1018,25 @@
                 lastUpdate: Date.now()
             };
             
+            // Update filter stats if available
+            if (newStats.filter_stats) {
+                updateFilterStats(newStats.filter_stats);
+            }
+            
             // Update performance display
             updatePerformanceDisplay();
+            
+            // Update performance display with filter info
+            if (newStats.filter_stats && smartFilterEnabled) {
+                const blockedPercentage = newStats.filter_stats.blocked_percentage || 0;
+                const filterInfo = `Smart Filter: ${blockedPercentage}% noise filtered`;
+                
+                // Update the performance stats display
+                const performanceElement = document.getElementById('performance-stats');
+                if (performanceElement) {
+                    performanceElement.innerHTML += ` | ${filterInfo}`;
+                }
+            }
             
             // Track performance history
             performanceHistory.push({

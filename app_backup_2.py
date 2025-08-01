@@ -3,6 +3,7 @@
 High-Performance Enhanced Intrusion Detection System 
 Optimized for 500+ packets/second with working attack detection
 FIXED: Corrected false positive detection for DDoS attacks.
+ENHANCED: Added Smart Filtering for MS Teams and demonstration mode
 """
 
 # Core imports
@@ -20,6 +21,9 @@ import time
 import queue
 from collections import deque, defaultdict
 import logging
+import ipaddress
+from collections import defaultdict
+import re
 
 
 
@@ -97,16 +101,6 @@ def mark_threat_ip(ip_address):
         if ip_address in network_topology['nodes']:
             network_topology['nodes'][ip_address]['is_threat'] = True
 
-
-
-
-
-# Replace the get_network_topology_data function with this fixed version:
-
-
-
-
-# Replace the get_network_topology_data function in app.py (around line 85-150) with this fixed version:
 
 def get_network_topology_data():
     """Get current network topology data for visualization - FIXED cleanup logic"""
@@ -227,9 +221,6 @@ def get_network_topology_data():
         }
 
 
-
-
-
 # YARA integration (optional)
 try:
     from yara_ids import YARAEngine, YARAIDSRule, integrate_yara_into_ids, create_enhanced_alert
@@ -261,6 +252,32 @@ CONFIG = {
     'cleanup_interval': 60     # Less frequent cleanup
 }
 
+# SMART FILTER CONFIG FOR MS TEAMS AND DEMONSTRATION MODE
+SMART_FILTER_CONFIG = {
+    'enable_smart_filtering': True,
+    'bypass_applications': {
+        # MS Teams and communication apps
+        'teams_ports': [443, 80, 3478, 3479, 3480, 3481],  # Teams uses these
+        'teams_domains': ['teams.microsoft.com', 'teams.live.com', 'api.teams.skype.com'],
+        'zoom_ports': [443, 80, 8801, 8802],
+        'webex_ports': [443, 80, 9943],
+        
+        # Common legitimate ports to reduce noise
+        'legitimate_ports': [53, 80, 443, 25, 465, 587, 993, 995, 123],  # DNS, HTTP, HTTPS, Email, NTP
+        
+        # High-volume protocols to limit
+        'limit_protocols': ['DNS', 'NTP', 'DHCP'],
+        
+        # Rate limiting for legitimate traffic
+        'max_packets_per_second': 50,  # Per application
+    },
+    'test_mode': {
+        'enable_test_prioritization': True,
+        'test_ports': [22, 21, 23, 1433, 3389, 5900],  # Prioritize attack testing ports
+        'test_ips': ['8.8.8.8', '1.1.1.1', '127.0.0.2'],  # Your test target IPs
+    }
+}
+
 # Global variables with thread-safe collections
 capture_thread = None
 is_capturing = False
@@ -275,6 +292,178 @@ alert_queue = queue.Queue(maxsize=1000)   # Larger alert queue
 # Rate limiting - reduced for testing
 last_ui_update = 0
 update_lock = threading.Lock()
+
+# =============================================================================
+# SMART PACKET FILTER CLASS
+# =============================================================================
+
+class SmartPacketFilter:
+    """Intelligent packet filtering to reduce noise during demonstrations"""
+    
+    def __init__(self):
+        self.legitimate_traffic_count = defaultdict(int)
+        self.last_reset_time = time.time()
+        self.blocked_packet_count = 0
+        self.allowed_packet_count = 0
+        
+        # Known legitimate application patterns
+        self.legitimate_patterns = {
+            'teams': [
+                b'teams.microsoft.com',
+                b'api.teams.skype.com', 
+                b'teams.live.com',
+                b'stun.l.google.com'
+            ],
+            'browsers': [
+                b'googleapis.com',
+                b'gstatic.com',
+                b'google-analytics.com',
+                b'doubleclick.net'
+            ],
+            'windows_updates': [
+                b'windowsupdate.microsoft.com',
+                b'update.microsoft.com',
+                b'download.microsoft.com'
+            ]
+        }
+    
+    def should_process_packet(self, packet_info, raw_data=None):
+        """Determine if packet should be processed by IDS"""
+        
+        if not SMART_FILTER_CONFIG['enable_smart_filtering']:
+            return True
+        
+        # Always process test traffic
+        if self._is_test_traffic(packet_info):
+            self.allowed_packet_count += 1
+            return True
+        
+        # Check if it's legitimate application traffic
+        if self._is_legitimate_app_traffic(packet_info, raw_data):
+            self.blocked_packet_count += 1
+            return False
+        
+        # Rate limit high-volume legitimate protocols
+        if self._should_rate_limit(packet_info):
+            self.blocked_packet_count += 1
+            return False
+        
+        # Process everything else
+        self.allowed_packet_count += 1
+        return True
+    
+    def _is_test_traffic(self, packet_info):
+        """Check if this is test/attack traffic we want to prioritize"""
+        test_config = SMART_FILTER_CONFIG['test_mode']
+        
+        if not test_config['enable_test_prioritization']:
+            return False
+        
+        src_ip = packet_info.get('src_ip')
+        dst_ip = packet_info.get('dst_ip')
+        dst_port = packet_info.get('dst_port')
+        
+        # Prioritize traffic to/from test IPs
+        if src_ip in test_config['test_ips'] or dst_ip in test_config['test_ips']:
+            return True
+        
+        # Prioritize traffic to test ports (attack simulation)
+        if dst_port in test_config['test_ports']:
+            return True
+        
+        # Prioritize external IP ranges (likely test traffic)
+        if self._is_external_ip(src_ip) or self._is_external_ip(dst_ip):
+            return True
+        
+        return False
+    
+    def _is_legitimate_app_traffic(self, packet_info, raw_data):
+        """Check if this is legitimate application traffic to filter out"""
+        dst_port = packet_info.get('dst_port')
+        src_port = packet_info.get('src_port')
+        protocol = packet_info.get('protocol')
+        
+        bypass_config = SMART_FILTER_CONFIG['bypass_applications']
+        
+        # Filter MS Teams traffic
+        if dst_port in bypass_config['teams_ports'] or src_port in bypass_config['teams_ports']:
+            if raw_data and any(domain in raw_data for domain in [b'teams.microsoft.com', b'skype.com']):
+                return True
+        
+        # Filter other communication apps
+        if (dst_port in bypass_config['zoom_ports'] or 
+            dst_port in bypass_config['webex_ports']):
+            return True
+        
+        # Filter high-volume legitimate protocols
+        if protocol in bypass_config['limit_protocols']:
+            return True
+        
+        # Check payload for legitimate app patterns
+        if raw_data:
+            for app, patterns in self.legitimate_patterns.items():
+                if any(pattern in raw_data for pattern in patterns):
+                    return True
+        
+        return False
+    
+    def _should_rate_limit(self, packet_info):
+        """Apply rate limiting to reduce packet volume"""
+        current_time = time.time()
+        
+        # Reset counters every second
+        if current_time - self.last_reset_time >= 1.0:
+            self.legitimate_traffic_count.clear()
+            self.last_reset_time = current_time
+        
+        # Rate limit by destination port
+        dst_port = packet_info.get('dst_port')
+        if dst_port in SMART_FILTER_CONFIG['bypass_applications']['legitimate_ports']:
+            self.legitimate_traffic_count[dst_port] += 1
+            
+            max_pps = SMART_FILTER_CONFIG['bypass_applications']['max_packets_per_second']
+            if self.legitimate_traffic_count[dst_port] > max_pps:
+                return True
+        
+        return False
+    
+    def _is_external_ip(self, ip_str):
+        """Check if IP is external (likely test traffic)"""
+        if not ip_str or ip_str in ['unknown', '127.0.0.1']:
+            return False
+        
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            
+            # Consider these as "external" for testing purposes
+            external_ranges = [
+                ipaddress.ip_network('8.8.8.0/24'),    # Google DNS
+                ipaddress.ip_network('1.1.1.0/24'),    # Cloudflare DNS
+                ipaddress.ip_network('208.67.222.0/24') # OpenDNS
+            ]
+            
+            for network in external_ranges:
+                if ip in network:
+                    return True
+            
+            # Also consider public IPs as external
+            return not ip.is_private
+            
+        except ValueError:
+            return False
+    
+    def get_filter_stats(self):
+        """Get filtering statistics"""
+        total = self.allowed_packet_count + self.blocked_packet_count
+        blocked_percentage = (self.blocked_packet_count / total * 100) if total > 0 else 0
+        
+        return {
+            'total_packets': total,
+            'allowed_packets': self.allowed_packet_count,
+            'blocked_packets': self.blocked_packet_count,
+            'blocked_percentage': round(blocked_percentage, 1),
+            'legitimate_traffic_counts': dict(self.legitimate_traffic_count)
+        }
 
 # =============================================================================
 # HIGH-PERFORMANCE BASE CLASSES
@@ -765,6 +954,7 @@ class HighPerformanceIDSEngine:
         print(f"   • YARA: {'Available' if self.yara_engine else 'Not available'}")
         print(f"   • Whitelisting: DISABLED for testing")
         print(f"   • Thresholds: REDUCED for testing")
+        print(f"   • Smart Filtering: {'Enabled' if SMART_FILTER_CONFIG['enable_smart_filtering'] else 'Disabled'}")
 
 # =============================================================================
 # HIGH-PERFORMANCE PACKET CAPTURE
@@ -776,6 +966,8 @@ class HighPerformancePacketCapture:
         self.conn = None
         self.is_running = False
         self.ids_engine = HighPerformanceIDSEngine(CONFIG['environment'])
+        # ADD SMART FILTERING
+        self.packet_filter = SmartPacketFilter()
         self.packet_stats = {
             'total_packets': 0,
             'total_alerts': 0,
@@ -816,6 +1008,7 @@ class HighPerformancePacketCapture:
             print(f"🚀 High-performance packet capture started on {interface_ip}")
             print(f"📊 Processing threads: {self.num_processing_threads}")
             print(f"⚡ Target performance: 500+ packets/second")
+            print(f"🛡️ Smart filtering: {'Enabled' if SMART_FILTER_CONFIG['enable_smart_filtering'] else 'Disabled'}")
             return True
             
         except Exception as e:
@@ -857,19 +1050,20 @@ class HighPerformancePacketCapture:
                     socketio.emit('capture_error', {'error': str(e)})
                 break
     
-   
-
-    
     def _background_processor(self):
-        """Background thread for high-speed packet processing"""
+        """Background thread for high-speed packet processing with smart filtering"""
         while self.is_running:
             try:
                 packet_info, raw_data = packet_queue.get(timeout=1)
                 
-                # IDS analysis
+                # SMART FILTERING CHECK - Skip unwanted packets
+                if not self.packet_filter.should_process_packet(packet_info, raw_data):
+                    continue  # Skip this packet
+                
+                # IDS analysis (only for filtered packets)
                 packet_alerts = self.ids_engine.analyze_packet(packet_info, raw_data)
                 
-                # ADD THIS LINE: Update network topology
+                # Update network topology
                 update_network_topology(packet_info)
                 
                 # Add packet to display queue
@@ -880,7 +1074,7 @@ class HighPerformancePacketCapture:
                     alerts.append(alert)
                     self.packet_stats['total_alerts'] += 1
                     
-                    # ADD THESE LINES: Mark threat IPs
+                    # Mark threat IPs
                     if alert.get('src_ip'):
                         mark_threat_ip(alert['src_ip'])
                     if alert.get('dst_ip'):
@@ -896,16 +1090,9 @@ class HighPerformancePacketCapture:
             except Exception as e:
                 if self.is_running:
                     print(f"Background processing error: {e}")
-
-
-
-
-
-
-    
     
     def _high_performance_ui_updater(self):
-        """High-performance UI updater - 500+ pps capable"""
+        """High-performance UI updater - 500+ pps capable with filter stats"""
         while self.is_running:
             try:
                 time.sleep(CONFIG['update_interval'])  # 0.1 seconds
@@ -933,7 +1120,7 @@ class HighPerformancePacketCapture:
                 if alerts_to_send:
                     socketio.emit('alert_batch', alerts_to_send)
                 
-                # Send enhanced stats
+                # Send enhanced stats WITH filter statistics
                 stats = {
                     'packets': self.packet_stats['total_packets'],
                     'alerts': self.packet_stats['total_alerts'],
@@ -941,7 +1128,8 @@ class HighPerformancePacketCapture:
                     'queue_size': packet_queue.qsize(),
                     'packets_per_second': self.packet_stats['packets_per_second'],
                     'processing_threads': len([t for t in self.processing_threads if t.is_alive()]),
-                    'ids_metrics': self.ids_engine.metrics
+                    'ids_metrics': self.ids_engine.metrics,
+                    'filter_stats': self.packet_filter.get_filter_stats()
                 }
                 socketio.emit('stats_update', stats)
                 
@@ -1100,11 +1288,13 @@ def start_capture():
         capture_thread.start()
         
         status = "with YARA support" if YARA_AVAILABLE else "traditional rules only"
+        filter_status = "with Smart Filtering" if SMART_FILTER_CONFIG['enable_smart_filtering'] else ""
         return jsonify({
             'success': True, 
-            'message': f'High-Performance IDS started {status}',
+            'message': f'High-Performance IDS started {status} {filter_status}',
             'environment': CONFIG['environment'],
-            'performance_target': '500+ packets/second'
+            'performance_target': '500+ packets/second',
+            'smart_filtering': SMART_FILTER_CONFIG['enable_smart_filtering']
         })
     else:
         return jsonify({'success': False, 'message': f'Failed to start: {result[1]}'})
@@ -1168,6 +1358,28 @@ def get_performance():
         'capture_stats': packet_capture.packet_stats
     })
 
+# NEW SMART FILTERING ROUTES
+@app.route('/api/filter/stats')
+def get_filter_stats():
+    """Get smart filtering statistics"""
+    if hasattr(packet_capture, 'packet_filter'):
+        stats = packet_capture.packet_filter.get_filter_stats()
+        return jsonify(stats)
+    return jsonify({'error': 'Filter not available'})
+
+@app.route('/api/filter/config', methods=['POST'])
+def update_filter_config():
+    """Update smart filtering configuration"""
+    data = request.get_json()
+    
+    if 'enable_smart_filtering' in data:
+        SMART_FILTER_CONFIG['enable_smart_filtering'] = data['enable_smart_filtering']
+    
+    if 'enable_test_prioritization' in data:
+        SMART_FILTER_CONFIG['test_mode']['enable_test_prioritization'] = data['enable_test_prioritization']
+    
+    return jsonify({'success': True, 'config': SMART_FILTER_CONFIG})
+
 # =============================================================================
 # WEBSOCKET HANDLERS
 # =============================================================================
@@ -1175,11 +1387,12 @@ def get_performance():
 @socketio.on('connect')
 def handle_connect():
     status = "with YARA support" if YARA_AVAILABLE else "(YARA not available)"
+    filter_status = "Smart Filtering Enabled" if SMART_FILTER_CONFIG['enable_smart_filtering'] else "Smart Filtering Disabled"
     emit('connected', {
-        'message': f'Connected to High-Performance IDS server {status}',
+        'message': f'Connected to High-Performance IDS server {status} - {filter_status}',
         'environment': CONFIG['environment'],
         'config': CONFIG,
-        'performance_info': 'Optimized for 500+ packets/second with attack detection'
+        'performance_info': 'Optimized for 500+ packets/second with attack detection and MS Teams filtering'
     })
 
 @socketio.on('disconnect')
@@ -1208,10 +1421,6 @@ def topology_config():
         if 'max_nodes' in data:
             network_topology['max_nodes'] = int(data['max_nodes'])
     return jsonify({'success': True})
-
-
-
-# Replace the manual_topology_cleanup route in app.py (around line 580-620) with this fixed version:
 
 @app.route('/api/topology/cleanup', methods=['POST'])
 def manual_topology_cleanup():
@@ -1322,54 +1531,12 @@ def manual_topology_cleanup():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e), 'details': 'Check server logs for full error'})
 
-
-
 @socketio.on('topology_subscribe')
 def handle_topology_subscription():
     """Handle client subscription to topology updates"""
     emit('topology_subscribed', {'message': 'Subscribed to topology updates'})
 
-
-
-if __name__ == '__main__':
-    print("=" * 70)
-    print("🛡️  HIGH-PERFORMANCE INTRUSION DETECTION SYSTEM (FIXED)")
-    print("=" * 70)
-    print("Performance Optimizations:")
-    print("• Target: 500+ packets/second processing")
-    print("• Multiple background processing threads")
-    print("• Optimized packet parsing and analysis")
-    print("• Large batches and fast UI updates")
-    print("• Reduced rate limiting for testing")
-    print("Attack Detection Optimizations:")
-    print("• FIXED: DDoS rule is now more specific to avoid false positives")
-    print("• REMOVED IP whitelisting (detects all external IPs)")
-    print("• REDUCED detection thresholds for testing")
-    print("• Enhanced logging for debugging")
-    print("• Optimized for test script IP ranges")
-    if YARA_AVAILABLE:
-        print("• YARA pattern matching enabled")
-    print("=" * 70)
-    print(f"🌐 Web Interface: http://localhost:5000")
-    print(f"🔧 Environment: {CONFIG['environment']}")
-    print(f"📊 Batch Size: {CONFIG['batch_size']}")
-    print(f"⏱️  Update Interval: {CONFIG['update_interval']}s")
-    print(f"🎯 DDoS Threshold: 100 packets/30s")
-    print(f"🎯 Port Scan Threshold: 15 ports/60s")
-    print(f"🎯 Brute Force Threshold: 30 attempts/5min")
-    print(f"🎯 DNS Tunneling Threshold: 50 queries/60s")
-    print("=" * 70)
-    print("⚠️  Remember to run as Administrator/sudo for packet capture!")
-    print("🧪 Ready for attack testing - all detection optimized!")
-    print("=" * 70)
-
-
-
-            # Add this function and thread to app.py to enable automatic cleanup
-
-import threading
-import time
-
+# Add this function and thread to app.py to enable automatic cleanup
 def automatic_topology_cleanup():
     """Background thread that automatically cleans up old topology data"""
     print("🧹 Starting automatic topology cleanup thread...")
@@ -1445,25 +1612,63 @@ def automatic_topology_cleanup():
             # Continue running even if there's an error
             continue
 
-# Add this to the main section of app.py (at the bottom, before socketio.run):
+if __name__ == '__main__':
+    print("=" * 80)
+    print("🛡️  HIGH-PERFORMANCE INTRUSION DETECTION SYSTEM (ENHANCED)")
+    print("=" * 80)
+    print("Performance Optimizations:")
+    print("• Target: 500+ packets/second processing")
+    print("• Multiple background processing threads")
+    print("• Optimized packet parsing and analysis")
+    print("• Large batches and fast UI updates")
+    print("• Reduced rate limiting for testing")
+    print("Attack Detection Optimizations:")
+    print("• FIXED: DDoS rule is now more specific to avoid false positives")
+    print("• REMOVED IP whitelisting (detects all external IPs)")
+    print("• REDUCED detection thresholds for testing")
+    print("• Enhanced logging for debugging")
+    print("• Optimized for test script IP ranges")
+    print("Smart Filtering Features:")
+    print(f"• MS Teams Traffic Filtering: {'Enabled' if SMART_FILTER_CONFIG['enable_smart_filtering'] else 'Disabled'}")
+    print(f"• Test Traffic Prioritization: {'Enabled' if SMART_FILTER_CONFIG['test_mode']['enable_test_prioritization'] else 'Disabled'}")
+    print("• Communication Apps Bypass: Teams, Zoom, WebEx")
+    print("• Rate Limiting: High-volume legitimate protocols")
+    print("• Demonstration Mode: Optimized for live presentations")
+    if YARA_AVAILABLE:
+        print("• YARA pattern matching enabled")
+    print("=" * 80)
+    print(f"🌐 Web Interface: http://localhost:5000")
+    print(f"🌐 Network Topology: http://localhost:5000/topology")
+    print(f"🔧 Environment: {CONFIG['environment']}")
+    print(f"📊 Batch Size: {CONFIG['batch_size']}")
+    print(f"⏱️  Update Interval: {CONFIG['update_interval']}s")
+    print(f"🎯 DDoS Threshold: 100 packets/30s")
+    print(f"🎯 Port Scan Threshold: 15 ports/60s")
+    print(f"🎯 Brute Force Threshold: 30 attempts/5min")
+    print(f"🎯 DNS Tunneling Threshold: 50 queries/60s")
+    print("Smart Filter Configuration:")
+    print(f"• Bypass MS Teams ports: {SMART_FILTER_CONFIG['bypass_applications']['teams_ports']}")
+    print(f"• Test target IPs: {SMART_FILTER_CONFIG['test_mode']['test_ips']}")
+    print(f"• Rate limit: {SMART_FILTER_CONFIG['bypass_applications']['max_packets_per_second']} pps per app")
+    print("=" * 80)
+    print("⚠️  Remember to run as Administrator/sudo for packet capture!")
+    print("🧪 Ready for attack testing with MS Teams noise filtering!")
+    print("🎥 Demonstration mode optimized - Smart filtering enabled!")
+    print("=" * 80)
 
-# Start automatic cleanup thread
-cleanup_thread = threading.Thread(target=automatic_topology_cleanup, daemon=True)
-cleanup_thread.start()
-print("✅ Automatic topology cleanup thread started")
-
-
-
-
+    # Start automatic cleanup thread
+    cleanup_thread = threading.Thread(target=automatic_topology_cleanup, daemon=True)
+    cleanup_thread.start()
+    print("✅ Automatic topology cleanup thread started")
     
-try:
-    socketio.run(app, debug=CONFIG['debug_mode'], host='0.0.0.0', port=5000)
-except KeyboardInterrupt:
-    print("\n👋 High-Performance IDS shutdown requested")
-    if is_capturing:
-        packet_capture.stop_capture()
-    print("✅ High-Performance IDS stopped cleanly")
-except Exception as e:
-    print(f"❌ Critical error: {e}")
-    if is_capturing:
-        packet_capture.stop_capture()
+    try:
+        socketio.run(app, debug=CONFIG['debug_mode'], host='0.0.0.0', port=5000)
+    except KeyboardInterrupt:
+        print("\n👋 High-Performance IDS shutdown requested")
+        if is_capturing:
+            packet_capture.stop_capture()
+        print("✅ High-Performance IDS stopped cleanly")
+    except Exception as e:
+        print(f"❌ Critical error: {e}")
+        if is_capturing:
+            packet_capture.stop_capture()
