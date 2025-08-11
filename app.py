@@ -29,6 +29,41 @@ import json
 import threading
 import time
 
+
+
+
+# MS Teams bypass configuration
+# Enhanced MS Teams bypass configuration
+MS_TEAMS_PORTS = frozenset({
+    80, 443, 53, 3478, 3479, 3480, 3481,  # HTTP/HTTPS/DNS/STUN
+    50000, 50001, 50002, 50003, 50004, 50005, 50006, 50007, 50008, 50009,
+    50010, 50011, 50012, 50013, 50014, 50015, 50016, 50017, 50018, 50019,
+    13000, 13001, 13002, 13003, 13004, 13005, 13006, 13007, 13008, 13009,
+    # Additional common ephemeral ports used by Teams
+    range(49152, 49200)  # Common ephemeral range
+})
+
+MS_TEAMS_SUBNETS = [
+    '13.107.64.0/18', '52.112.0.0/14', '52.120.0.0/14', '52.238.0.0/16',
+    '52.244.0.0/16', '52.245.0.0/16', '20.190.128.0/18'
+]
+
+def is_ms_teams_traffic(src_ip, dst_ip, src_port, dst_port):
+    """Check if traffic is MS Teams related"""
+    ports_to_check = {src_port, dst_port}
+    if not ports_to_check.intersection(MS_TEAMS_PORTS):
+        return False
+    
+    for subnet in MS_TEAMS_SUBNETS:
+        try:
+            network = ipaddress.ip_network(subnet, strict=False)
+            if (ipaddress.ip_address(src_ip) in network or 
+                ipaddress.ip_address(dst_ip) in network):
+                return True
+        except:
+            continue
+    return False
+
 # Global network topology data structures
 network_topology = {
     'nodes': defaultdict(lambda: {
@@ -341,8 +376,13 @@ class HighPerformancePortScanRule(IDSRule):
             return False
         
         src_ip = packet_info.get('src_ip')
+        dst_ip = packet_info.get('dst_ip')
+        src_port = packet_info.get('src_port')
         dst_port = packet_info.get('dst_port')
         current_time = time.time()
+
+        if is_ms_teams_traffic(src_ip, dst_ip, src_port, dst_port):
+            return False
         
         # Skip only essential legitimate ports
         if dst_port in self.legitimate_ports:
@@ -402,16 +442,42 @@ class HighPerformanceDDoSDetectionRule(IDSRule):
     
     def check(self, packet_info, raw_data=None):
         src_ip = packet_info.get('src_ip')
-        dst_ip = packet_info.get('dst_ip') # FIX: Get destination IP
+        dst_ip = packet_info.get('dst_ip')
+        src_port = packet_info.get('src_port')
+        dst_port = packet_info.get('dst_port')
         current_time = time.time()
+
+
+        if (src_port in MS_TEAMS_PORTS or dst_port in MS_TEAMS_PORTS or
+            src_port in range(50000, 50020) or dst_port in range(50000, 50020) or
+            src_port in range(13000, 13010) or dst_port in range(13000, 13010)):
+
         
-        # REMOVED whitelist checking - detect everything
+            try:
+                for subnet in MS_TEAMS_SUBNETS:
+                    network = ipaddress.ip_network(subnet, strict=False)
+                    if (ipaddress.ip_address(src_ip) in network or 
+                        ipaddress.ip_address(dst_ip) in network):
+                        return False
+            except:
+                pass
+        
+        # If any Teams port is involved, skip DDoS detection entirely
+            return False
+    
+    # Skip high-traffic legitimate ports during meetings
+        if dst_port in {80, 443, 53} and src_port > 1024:
+            return False
+    
         if not src_ip or not dst_ip:
             return False
-        
-        # Only skip actual localhost
+    
+    # Only skip actual localhost
         if src_ip == '127.0.0.1':
             return False
+        
+        
+        
         
         # Periodic cleanup
         if current_time - self.last_cleanup > self.cleanup_interval:
@@ -477,8 +543,13 @@ class HighPerformanceBruteForceRule(IDSRule):
         
         dst_port = packet_info.get('dst_port')
         src_ip = packet_info.get('src_ip')
+        dst_ip = packet_info.get('dst_ip')
+        src_port = packet_info.get('src_port')
         current_time = time.time()
         
+        if is_ms_teams_traffic(src_ip, dst_ip, src_port, dst_port):
+            return False
+
         # Only check auth ports, but don't skip any IPs except actual localhost
         if dst_port not in self.auth_ports or not src_ip or src_ip == '127.0.0.1':
             return False
