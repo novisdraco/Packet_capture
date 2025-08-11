@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>High-Performance IDS - Smooth UI</title>
+    <title>Enhanced IDS - Real-time Threat Detection</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -12,203 +15,87 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: #333;
-            min-height: 100vh;
+            overflow-x: hidden;
         }
         
-        .container {
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            padding: 1rem 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .header-content {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            gap: 2rem;
         }
         
-        .header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        .header h1 {
-            color: #4a5568;
-            margin-bottom: 5px;
-            font-size: 2.2rem;
-        }
-        
-        .header .subtitle {
-            color: #718096;
-            font-size: 1rem;
-        }
-        
-        .performance-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-            color: white;
-            padding: 6px 15px;
-            border-radius: 25px;
-            font-size: 0.85rem;
-            font-weight: 700;
-            margin-left: 15px;
-            box-shadow: 0 2px 10px rgba(72, 187, 120, 0.3);
-            animation: pulse-glow 2s infinite;
-        }
-        
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 2px 10px rgba(72, 187, 120, 0.3); }
-            50% { box-shadow: 0 4px 20px rgba(72, 187, 120, 0.6); }
-        }
-        
-        .dashboard {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .stat-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 15px;
-            text-align: center;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-        }
-        
-        .stat-card.performance-card {
-            background: linear-gradient(135deg, rgba(72, 187, 120, 0.1) 0%, rgba(56, 161, 105, 0.05) 100%);
-            border: 2px solid rgba(72, 187, 120, 0.2);
-        }
-        
-        .stat-card.alert-card {
-            background: linear-gradient(135deg, rgba(229, 62, 62, 0.1) 0%, rgba(245, 101, 101, 0.05) 100%);
-            border: 2px solid rgba(229, 62, 62, 0.2);
-        }
-        
-        .stat-number {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #667eea;
-            display: block;
-            margin-bottom: 2px;
-            transition: all 0.3s ease;
-        }
-        
-        .stat-label {
-            color: #718096;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-        
-        .performance-number {
-            color: #48bb78 !important;
-        }
-        
-        .alert-stat {
-            color: #e53e3e !important;
-        }
-        
-        .controls {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        .control-group {
-            margin-bottom: 15px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #4a5568;
-        }
-        
-        select, button {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: all 0.3s ease;
-        }
-        
-        select:focus {
-            border-color: #48bb78;
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.1);
-        }
-        
-        button {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        button:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(72, 187, 120, 0.4);
-        }
-        
-        button:disabled {
-            background: #cbd5e0;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        
-        .button-group {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        
-        .status {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        
-        .status-indicator {
+        .logo {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 0.75rem;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+        
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2d3748;
+            margin: 0;
+        }
+        
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: auto;
+        }
+        
+        .status-badge.active {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+        }
+        
+        .status-badge.inactive {
+            background: #f3f4f6;
+            color: #6b7280;
         }
         
         .status-dot {
-            width: 14px;
-            height: 14px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            background: #f56565;
+            background: currentColor;
             animation: pulse 2s infinite;
-        }
-        
-        .status-dot.active {
-            background: #48bb78;
-            box-shadow: 0 0 10px rgba(72, 187, 120, 0.5);
         }
         
         @keyframes pulse {
@@ -216,1014 +103,1279 @@
             50% { opacity: 0.5; }
         }
         
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+        /* Main Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
         }
         
-        .alerts-container, .packets-container {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-            height: 550px;
+        /* Control Panel */
+        .control-panel {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .control-grid {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 2rem;
+            align-items: center;
+        }
+        
+        .interface-group {
             display: flex;
             flex-direction: column;
+            gap: 0.5rem;
         }
         
-        .alerts-header, .packets-header {
-            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-            color: white;
-            padding: 15px 20px;
+        .interface-group label {
+            font-size: 0.875rem;
             font-weight: 600;
+            color: #374151;
+        }
+        
+        .interface-select {
+            padding: 0.75rem 1rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 1rem;
+            background: white;
+            transition: all 0.2s ease;
+            min-width: 250px;
+        }
+        
+        .interface-select:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .btn {
+            padding: 0.875rem 1.5rem;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+        }
+        
+        .btn-danger:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+        }
+        
+        .btn:disabled {
+            background: #d1d5db;
+            color: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* Stats Dashboard */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .stat-card.alert-card::before {
+            background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .stat-card.performance-card::before {
+            background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.12);
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #1f2937;
+            margin-bottom: 0.5rem;
+            display: block;
+            line-height: 1;
+        }
+        
+        .stat-number.alert {
+            color: #ef4444;
+        }
+        
+        .stat-number.performance {
+            color: #10b981;
+        }
+        
+        .stat-label {
+            color: #6b7280;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        /* Main Content Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .content-card {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+        }
+        
+        .card-header {
+            padding: 1.5rem 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
             display: flex;
             align-items: center;
-            gap: 10px;
-            flex-shrink: 0;
+            justify-content: between;
+            gap: 1rem;
+            position: relative;
         }
         
-        .alerts-header {
-            background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
+        .card-header.alerts {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
         }
         
-        .content-area {
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .card-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.25rem 0.75rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: auto;
+        }
+        
+        .card-content {
             flex: 1;
             overflow: hidden;
             position: relative;
         }
         
-        /* SMOOTH UI OPTIMIZATIONS - CRITICAL FIXES */
-        .alerts-list, .packets-list {
+        .content-list {
             height: 100%;
             overflow-y: auto;
-            scroll-behavior: smooth;
-            /* SMOOTH SCROLLING */
-            -webkit-overflow-scrolling: touch;
-            /* REMOVE FLICKERING */
-            will-change: scroll-position;
-            transform: translateZ(0);
-            backface-visibility: hidden;
-            /* PERFORMANCE BOOST */
-            contain: layout style paint;
+            padding: 0;
         }
         
-        /* VIRTUAL SCROLLING CONTAINER */
-        .virtual-list-container {
-            position: relative;
-            height: 100%;
-            overflow: hidden;
+        .content-list::-webkit-scrollbar {
+            width: 6px;
         }
         
-        .virtual-list-viewport {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            overflow-y: auto;
-            overflow-x: hidden;
-            -webkit-overflow-scrolling: touch;
+        .content-list::-webkit-scrollbar-track {
+            background: #f1f5f9;
         }
         
-        .virtual-list-spacer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            pointer-events: none;
+        .content-list::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
         }
         
-        .virtual-list-items {
-            position: relative;
-            z-index: 1;
+        .content-list::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
         }
         
-        /* SMOOTH ITEM ANIMATIONS */
-        .alert, .packet {
-            border-bottom: 1px solid #e2e8f0;
-            padding: 12px 20px;
-            min-height: 70px;
-            /* PREVENT LAYOUT THRASHING */
-            transform: translateZ(0);
-            will-change: transform;
-            /* SMOOTH TRANSITIONS */
-            transition: opacity 0.2s ease, transform 0.2s ease;
-            /* CONTENT CONTAINMENT */
-            contain: layout style;
+        .list-item {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid #f1f5f9;
+            transition: all 0.2s ease;
         }
         
-        .alert {
-            border-left: 4px solid #e53e3e;
-            background: linear-gradient(90deg, rgba(229, 62, 62, 0.08) 0%, transparent 100%);
+        .list-item:hover {
+            background: #f8fafc;
         }
         
-        /* SMOOTH ENTRY ANIMATIONS */
-        .alert.entering {
-            opacity: 0;
-            transform: translateY(-10px);
+        .list-item:last-child {
+            border-bottom: none;
         }
         
-        .alert.entered {
-            opacity: 1;
-            transform: translateY(0);
+        .alert-item {
+            border-left: 4px solid #ef4444;
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, transparent 50%);
         }
         
-        .packet.entering {
-            opacity: 0;
-            transform: translateX(-10px);
+        .packet-item {
+            border-left: 4px solid #10b981;
         }
         
-        .packet.entered {
-            opacity: 1;
-            transform: translateX(0);
-        }
-        
-        .alert:hover, .packet:hover {
-            background-color: rgba(247, 250, 252, 0.8);
-            transform: translateX(2px);
-        }
-        
-        .alert-header {
+        .item-header {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
+            justify-content: between;
+            align-items: flex-start;
+            margin-bottom: 0.75rem;
+            gap: 1rem;
         }
         
-        .alert-title {
+        .item-title {
             font-weight: 600;
-            color: #e53e3e;
+            color: #1f2937;
+            margin: 0;
             font-size: 1rem;
         }
         
+        .item-time {
+            color: #6b7280;
+            font-size: 0.875rem;
+            white-space: nowrap;
+        }
+        
+        .item-details {
+            color: #4b5563;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            margin-bottom: 0.75rem;
+        }
+        
+        .item-network {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+            font-size: 0.8rem;
+            color: #6b7280;
+            background: #f8fafc;
+            padding: 0.75rem;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        
         .severity-badge {
-            padding: 3px 10px;
-            border-radius: 15px;
-            font-size: 0.7em;
+            padding: 0.25rem 0.75rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
             font-weight: 600;
             text-transform: uppercase;
         }
         
         .severity-low {
-            background: #c6f6d5;
-            color: #276749;
+            background: #dcfce7;
+            color: #166534;
         }
         
         .severity-medium {
-            background: #fbb344;
-            color: #744210;
+            background: #fef3c7;
+            color: #92400e;
         }
         
         .severity-high {
-            background: #fed7d7;
-            color: #c53030;
-        }
-        
-        .alert-time {
-            color: #718096;
-            font-size: 0.85em;
-        }
-        
-        .alert-details {
-            color: #4a5568;
-            margin-bottom: 6px;
-            font-size: 0.9em;
-        }
-        
-        .alert-network {
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 0.8em;
-            color: #718096;
-            background: #f7fafc;
-            padding: 6px;
-            border-radius: 4px;
-        }
-        
-        .packet-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-        
-        .packet-id {
-            font-weight: 600;
-            color: #48bb78;
-            margin-right: 10px;
-            font-size: 0.9em;
-        }
-        
-        .packet-time {
-            color: #718096;
-            font-size: 0.8em;
-        }
-        
-        .packet-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 6px;
-        }
-        
-        .packet-detail {
-            font-size: 0.85em;
-            color: #4a5568;
-        }
-        
-        .packet-detail strong {
-            color: #2d3748;
+            background: #fee2e2;
+            color: #991b1b;
         }
         
         .protocol-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.7em;
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
             font-weight: 600;
             text-transform: uppercase;
         }
         
         .protocol-tcp {
-            background: #bee3f8;
-            color: #2b6cb0;
+            background: #dbeafe;
+            color: #1e40af;
         }
         
         .protocol-udp {
-            background: #c6f6d5;
-            color: #276749;
+            background: #dcfce7;
+            color: #166534;
         }
         
         .protocol-icmp {
-            background: #fed7d7;
-            color: #c53030;
+            background: #fee2e2;
+            color: #991b1b;
         }
         
         .protocol-other {
-            background: #e2e8f0;
-            color: #4a5568;
+            background: #f3f4f6;
+            color: #374151;
         }
         
-        .no-items {
+        /* Network Topology */
+        .topology-card {
+            grid-column: 1 / -1;
+            height: 600px;
+        }
+        
+        .topology-controls {
+            padding: 1rem 2rem;
+            background: #f8fafc;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .control-group label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+        }
+        
+        .control-group select,
+        .control-group input {
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.875rem;
+        }
+        
+        .control-group button {
+            padding: 0.5rem 1rem;
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .control-group button:hover {
+            background: #d97706;
+        }
+        
+        #networkViz {
+            width: 100%;
+            height: 500px;
+            background: #fafbfc;
+        }
+        
+        /* Empty States */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6b7280;
             text-align: center;
-            padding: 40px;
-            color: #718096;
-            font-size: 0.9rem;
+            padding: 2rem;
         }
         
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .empty-state h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+        
+        .empty-state p {
+            margin: 0;
+            font-size: 0.875rem;
+        }
+        
+        /* Notifications */
         .notification {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
-            color: white;
-            padding: 15px 20px;
+            top: 2rem;
+            right: 2rem;
+            background: white;
             border-radius: 12px;
-            box-shadow: 0 8px 25px rgba(229, 62, 62, 0.4);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            border: 1px solid #e5e7eb;
+            padding: 1.5rem;
+            max-width: 400px;
             z-index: 1000;
-            transform: translateX(400px);
-            transition: transform 0.4s ease;
-            max-width: 350px;
+            transform: translateX(450px);
+            transition: transform 0.3s ease;
         }
         
         .notification.show {
             transform: translateX(0);
         }
         
-        /* PERFORMANCE INDICATOR */
-        .performance-indicator {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(72, 187, 120, 0.9);
+        .notification.alert {
+            border-left: 4px solid #ef4444;
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, white 20%);
+        }
+        
+        .notification-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .notification-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: #ef4444;
             color: white;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.7rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.125rem;
+        }
+        
+        .notification-title {
             font-weight: 600;
-            z-index: 2;
+            color: #1f2937;
+            margin: 0;
         }
         
-        .performance-indicator.high {
-            background: rgba(72, 187, 120, 0.9);
+        .notification-message {
+            color: #4b5563;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            margin: 0;
         }
         
-        .performance-indicator.medium {
-            background: rgba(251, 179, 68, 0.9);
-        }
-        
-        .performance-indicator.low {
-            background: rgba(229, 62, 62, 0.9);
-        }
-        
-        /* LOADING STATES */
-        .loading-indicator {
-            text-align: center;
-            padding: 20px;
-            color: #718096;
-            font-style: italic;
-        }
-        
-        /* SMOOTH COUNTER ANIMATIONS */
-        @keyframes counter-update {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); color: #48bb78; }
-            100% { transform: scale(1); }
-        }
-        
-        .stat-number.updating {
-            animation: counter-update 0.3s ease;
-        }
-        
-        /* RESPONSIVE DESIGN */
+        /* Responsive Design */
         @media (max-width: 1200px) {
-            .main-content {
+            .main-grid {
                 grid-template-columns: 1fr;
             }
             
-            .dashboard {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            .control-grid {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+            
+            .btn-group {
+                justify-content: stretch;
+            }
+            
+            .btn-group .btn {
+                flex: 1;
             }
         }
         
         @media (max-width: 768px) {
-            .button-group {
-                grid-template-columns: 1fr;
+            .container {
+                padding: 1rem;
             }
             
-            .packet-info {
-                grid-template-columns: 1fr;
-            }
-            
-            .header h1 {
-                font-size: 1.8rem;
-            }
-            
-            .performance-badge {
-                display: block;
-                margin: 10px 0 0 0;
+            .header-content {
+                padding: 0 1rem;
+                flex-direction: column;
+                gap: 1rem;
                 text-align: center;
             }
+            
+            .status-badge {
+                margin-left: 0;
+            }
+            
+            .control-panel {
+                padding: 1.5rem;
+            }
+            
+            .stat-card {
+                padding: 1.5rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 1rem;
+            }
+            
+            .topology-controls {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: stretch;
+            }
+            
+            .control-group {
+                justify-content: space-between;
+            }
+        }
+        
+        /* Loading animations */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Smooth transitions */
+        * {
+            transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🛡️ High-Performance IDS<span class="performance-badge" id="perf-badge">SMOOTH UI READY</span></h1>
-            <p class="subtitle">Real-time packet capture with smooth, optimized UI • Zero flickering guarantee</p>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🛡️</div>
+                <h1 class="logo-text">Enhanced IDS</h1>
+            </div>
+            <div class="status-badge" id="systemStatus">
+                <div class="status-dot"></div>
+                <span>System Ready</span>
+            </div>
         </div>
-        
-        <div class="dashboard">
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <div class="control-grid">
+                <div class="interface-group">
+                    <label for="interfaceSelect">Network Interface</label>
+                    <select id="interfaceSelect" class="interface-select">
+                        <option value="">Loading interfaces...</option>
+                    </select>
+                </div>
+                <div class="btn-group">
+                    <button id="startBtn" class="btn btn-primary">
+                        🚀 Start Monitoring
+                    </button>
+                    <button id="stopBtn" class="btn btn-danger" disabled>
+                        ⏹️ Stop Monitoring
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Dashboard -->
+        <div class="stats-grid">
             <div class="stat-card performance-card">
-                <span class="stat-number performance-number" id="packet-rate">0</span>
+                <span class="stat-number performance" id="packetRate">0</span>
                 <div class="stat-label">Packets/Second</div>
             </div>
             <div class="stat-card">
-                <span class="stat-number" id="packet-count">0</span>
+                <span class="stat-number" id="totalPackets">0</span>
                 <div class="stat-label">Total Packets</div>
             </div>
             <div class="stat-card alert-card">
-                <span class="stat-number alert-stat" id="alert-count">0</span>
+                <span class="stat-number alert" id="totalAlerts">0</span>
                 <div class="stat-label">Security Alerts</div>
             </div>
             <div class="stat-card">
-                <span class="stat-number" id="queue-size">0</span>
-                <div class="stat-label">Queue Size</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number" id="dropped-count">0</span>
-                <div class="stat-label">Dropped Packets</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number" id="processing-threads">0</span>
-                <div class="stat-label">Processing Threads</div>
-            </div>
-            <div class="stat-card">
-                <span class="stat-number" id="threat-level">LOW</span>
+                <span class="stat-number" id="threatLevel">LOW</span>
                 <div class="stat-label">Threat Level</div>
             </div>
-        </div>
-        
-        <div class="controls">
-            <div class="control-group">
-                <label for="interface-select">Select Network Interface:</label>
-                <select id="interface-select">
-                    <option value="">Loading interfaces...</option>
-                </select>
+            <div class="stat-card">
+                <span class="stat-number" id="activeNodes">0</span>
+                <div class="stat-label">Active Nodes</div>
             </div>
-            
-            <div class="button-group">
-                <button id="start-btn">Start Smooth Monitoring</button>
-                <button id="stop-btn" disabled>Stop Monitoring</button>
+            <div class="stat-card performance-card">
+                <span class="stat-number performance" id="filterStats">0%</span>
+                <div class="stat-label">Traffic Filtered</div>
             </div>
         </div>
-        
-        <div class="status">
-            <div class="status-indicator">
-                <div class="status-dot" id="status-dot"></div>
-                <span id="status-text">Ready for smooth, high-performance monitoring</span>
-                <span id="session-time" style="margin-left: auto;">Session: 00:00:00</span>
-            </div>
-        </div>
-        
-        <div class="main-content">
-            <div class="alerts-container">
-                <div class="alerts-header">
-                    🚨 Security Alerts (Smooth UI)
-                    <span id="alert-rate" style="margin-left: auto; font-size: 0.8em;">0/min</span>
+
+        <!-- Main Content Grid -->
+        <div class="main-grid">
+            <!-- Security Alerts -->
+            <div class="content-card">
+                <div class="card-header alerts">
+                    <h2 class="card-title">
+                        🚨 Security Alerts
+                    </h2>
+                    <div class="card-badge" id="alertRate">0/min</div>
                 </div>
-                <div class="content-area">
-                    <div class="performance-indicator" id="alert-performance">READY</div>
-                    <div class="virtual-list-container">
-                        <div class="virtual-list-viewport" id="alerts-viewport">
-                            <div class="virtual-list-spacer" id="alerts-spacer" style="height: 0px;"></div>
-                            <div class="virtual-list-items" id="alerts-items">
-                                <div class="no-items">
-                                    No security alerts yet. Smooth monitoring ready for attack detection.
-                                </div>
-                            </div>
+                <div class="card-content">
+                    <div class="content-list" id="alertsList">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🛡️</div>
+                            <h3>No Threats Detected</h3>
+                            <p>System is monitoring for security threats</p>
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="packets-container">
-                <div class="packets-header">
-                    📊 Network Traffic (Smooth Rendering)
-                    <span id="packet-throughput" style="margin-left: auto; font-size: 0.8em;">0 PPS</span>
+
+            <!-- Network Traffic -->
+            <div class="content-card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        📊 Network Traffic
+                    </h2>
+                    <div class="card-badge" id="packetThroughput">0 PPS</div>
                 </div>
-                <div class="content-area">
-                    <div class="performance-indicator" id="packet-performance">READY</div>
-                    <div class="virtual-list-container">
-                        <div class="virtual-list-viewport" id="packets-viewport">
-                            <div class="virtual-list-spacer" id="packets-spacer" style="height: 0px;"></div>
-                            <div class="virtual-list-items" id="packets-items">
-                                <div class="no-items">
-                                    No packets captured yet. Start smooth monitoring to see network traffic.
-                                </div>
-                            </div>
+                <div class="card-content">
+                    <div class="content-list" id="packetsList">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📡</div>
+                            <h3>No Traffic</h3>
+                            <p>Start monitoring to see network activity</p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Network Topology -->
+        <div class="content-card topology-card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    🌐 Network Topology
+                </h2>
+                <div class="card-badge" id="topologyStats">0 nodes</div>
+            </div>
+            <div class="card-content">
+                <div id="networkViz"></div>
+            </div>
+            <div class="topology-controls">
+                <div class="control-group">
+                    <label>Max Nodes:</label>
+                    <select id="maxNodes">
+                        <option value="10">10</option>
+                        <option value="15" selected>15</option>
+                        <option value="20">20</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Update Rate:</label>
+                    <select id="updateRate">
+                        <option value="2000" selected>2s</option>
+                        <option value="5000">5s</option>
+                        <option value="10000">10s</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>
+                        <input type="checkbox" id="showLabels" checked> Show Labels
+                    </label>
+                </div>
+                <div class="control-group">
+                    <button onclick="cleanupTopology()">🧹 Cleanup</button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Notification for alerts -->
-    <div class="notification" id="alert-notification">
-        <strong>🚨 Attack Detected!</strong>
-        <div id="notification-message">New security threat detected</div>
+    <!-- Notification System -->
+    <div class="notification" id="notification">
+        <div class="notification-header">
+            <div class="notification-icon">⚠️</div>
+            <h4 class="notification-title">Security Alert</h4>
+        </div>
+        <p class="notification-message" id="notificationMessage">
+            New threat detected on your network
+        </p>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
-        console.log('🚀 Starting Smooth High-Performance IDS Interface...');
-        
-        // SMOOTH UI CLASS - PREVENTS FLICKERING
-        class SmoothUIManager {
+        console.log('🚀 Enhanced IDS Dashboard Loading...');
+
+        // Initialize Socket.IO with optimizations
+        const socket = io({
+            transports: ['websocket'],
+            upgrade: true,
+            rememberUpgrade: true
+        });
+
+        // Global state management
+        class IDSState {
             constructor() {
-                this.alertsBuffer = [];
-                this.packetsBuffer = [];
-                this.isRendering = false;
-                this.renderQueue = [];
-                this.maxVisibleItems = 50; // Limit visible items for performance
-                this.itemHeight = 70; // Average item height
-                
-                // Animation frame management
-                this.rafId = null;
-                this.lastRender = 0;
-                this.renderThrottle = 16; // ~60fps
-                
-                // DOM element cache
-                this.alertsContainer = document.getElementById('alerts-items');
-                this.packetsContainer = document.getElementById('packets-items');
-                this.alertsViewport = document.getElementById('alerts-viewport');
-                this.packetsViewport = document.getElementById('packets-viewport');
-                this.alertsSpacer = document.getElementById('alerts-spacer');
-                this.packetsSpacer = document.getElementById('packets-spacer');
-            }
-            
-            // SMOOTH ALERT RENDERING
-            addAlertsSmooth(newAlerts) {
-                if (!newAlerts || newAlerts.length === 0) return;
-                
-                // Add to buffer
-                this.alertsBuffer.unshift(...newAlerts);
-                
-                // Limit buffer size
-                if (this.alertsBuffer.length > this.maxVisibleItems * 2) {
-                    this.alertsBuffer = this.alertsBuffer.slice(0, this.maxVisibleItems * 2);
-                }
-                
-                // Schedule smooth render
-                this.scheduleRender('alerts');
-            }
-            
-            // SMOOTH PACKET RENDERING  
-            addPacketsSmooth(newPackets) {
-                if (!newPackets || newPackets.length === 0) return;
-                
-                // Add to buffer
-                this.packetsBuffer.unshift(...newPackets);
-                
-                // Limit buffer size
-                if (this.packetsBuffer.length > this.maxVisibleItems * 2) {
-                    this.packetsBuffer = this.packetsBuffer.slice(0, this.maxVisibleItems * 2);
-                }
-                
-                // Schedule smooth render
-                this.scheduleRender('packets');
-            }
-            
-            // SMOOTH RENDER SCHEDULER
-            scheduleRender(type) {
-                if (this.renderQueue.indexOf(type) === -1) {
-                    this.renderQueue.push(type);
-                }
-                
-                if (!this.rafId) {
-                    this.rafId = requestAnimationFrame(() => this.render());
-                }
-            }
-            
-            // OPTIMIZED RENDER METHOD
-            render() {
-                const now = performance.now();
-                
-                // Throttle rendering for smooth performance
-                if (now - this.lastRender < this.renderThrottle) {
-                    this.rafId = requestAnimationFrame(() => this.render());
-                    return;
-                }
-                
-                this.lastRender = now;
-                
-                // Process render queue
-                while (this.renderQueue.length > 0) {
-                    const type = this.renderQueue.shift();
-                    
-                    if (type === 'alerts') {
-                        this.renderAlerts();
-                    } else if (type === 'packets') {
-                        this.renderPackets();
-                    }
-                }
-                
-                this.rafId = null;
-                
-                // Continue rendering if queue has items
-                if (this.renderQueue.length > 0) {
-                    this.rafId = requestAnimationFrame(() => this.render());
-                }
-            }
-            
-            // VIRTUAL SCROLL ALERTS RENDERING
-            renderAlerts() {
-                const visibleAlerts = this.alertsBuffer.slice(0, this.maxVisibleItems);
-                
-                // Clear and rebuild (smooth approach)
-                const fragment = document.createDocumentFragment();
-                
-                visibleAlerts.forEach((alert, index) => {
-                    const alertElement = this.createAlertElement(alert);
-                    
-                    // Add smooth entry animation
-                    alertElement.classList.add('entering');
-                    setTimeout(() => {
-                        alertElement.classList.remove('entering');
-                        alertElement.classList.add('entered');
-                    }, index * 20); // Stagger animations
-                    
-                    fragment.appendChild(alertElement);
-                });
-                
-                // Update DOM smoothly
-                requestAnimationFrame(() => {
-                    this.alertsContainer.innerHTML = '';
-                    this.alertsContainer.appendChild(fragment);
-                    
-                    // Update virtual scroll spacer
-                    const totalHeight = this.alertsBuffer.length * this.itemHeight;
-                    this.alertsSpacer.style.height = `${totalHeight}px`;
-                });
-            }
-            
-            // VIRTUAL SCROLL PACKETS RENDERING
-            renderPackets() {
-                const visiblePackets = this.packetsBuffer.slice(0, this.maxVisibleItems);
-                
-                // Clear and rebuild (smooth approach)  
-                const fragment = document.createDocumentFragment();
-                
-                visiblePackets.forEach((packet, index) => {
-                    const packetElement = this.createPacketElement(packet);
-                    
-                    // Add smooth entry animation
-                    packetElement.classList.add('entering');
-                    setTimeout(() => {
-                        packetElement.classList.remove('entering');
-                        packetElement.classList.add('entered');
-                    }, index * 10); // Faster stagger for packets
-                    
-                    fragment.appendChild(packetElement);
-                });
-                
-                // Update DOM smoothly
-                requestAnimationFrame(() => {
-                    this.packetsContainer.innerHTML = '';
-                    this.packetsContainer.appendChild(fragment);
-                    
-                    // Update virtual scroll spacer
-                    const totalHeight = this.packetsBuffer.length * this.itemHeight;
-                    this.packetsSpacer.style.height = `${totalHeight}px`;
-                });
-            }
-            
-            createAlertElement(alert) {
-                const alertElement = document.createElement('div');
-                alertElement.className = 'alert';
-                
-                const severityClass = `severity-${alert.severity.toLowerCase()}`;
-                
-                alertElement.innerHTML = `
-                    <div class="alert-header">
-                        <div class="alert-title">${alert.rule_name}</div>
-                        <div class="severity-badge ${severityClass}">${alert.severity}</div>
-                    </div>
-                    <div class="alert-time">${alert.timestamp}</div>
-                    <div class="alert-details">${alert.description}</div>
-                    <div class="alert-network">
-                        ${alert.src_ip}${alert.src_port ? ':' + alert.src_port : ''} → 
-                        ${alert.dst_ip}${alert.dst_port ? ':' + alert.dst_port : ''} 
-                        [${alert.protocol}] #${alert.packet_id}
-                    </div>
-                `;
-                
-                return alertElement;
-            }
-            
-            createPacketElement(packet) {
-                const packetElement = document.createElement('div');
-                packetElement.className = 'packet';
-                
-                const protocolClass = this.getProtocolClass(packet.protocol);
-                const portsInfo = packet.src_port ? `${packet.src_port} → ${packet.dst_port}` : '';
-                const flagsInfo = packet.flags ? ` [${packet.flags}]` : '';
-                
-                packetElement.innerHTML = `
-                    <div class="packet-header">
-                        <span class="packet-id">#${packet.id}</span>
-                        <span class="protocol-badge ${protocolClass}">${packet.protocol}</span>
-                        <span class="packet-time">${packet.timestamp}</span>
-                    </div>
-                    <div class="packet-info">
-                        <div class="packet-detail">
-                            <strong>Src:</strong> ${packet.src_ip}${packet.src_port ? ':' + packet.src_port : ''}
-                        </div>
-                        <div class="packet-detail">
-                            <strong>Dst:</strong> ${packet.dst_ip}${packet.dst_port ? ':' + packet.dst_port : ''}
-                        </div>
-                        <div class="packet-detail">
-                            <strong>Size:</strong> ${packet.size}B
-                        </div>
-                        <div class="packet-detail">
-                            <strong>Info:</strong> ${portsInfo}${flagsInfo}
-                        </div>
-                    </div>
-                `;
-                
-                return packetElement;
-            }
-            
-            getProtocolClass(protocol) {
-                switch (protocol.toLowerCase()) {
-                    case 'tcp': return 'protocol-tcp';
-                    case 'udp': return 'protocol-udp';
-                    case 'icmp': return 'protocol-icmp';
-                    default: return 'protocol-other';
-                }
-            }
-            
-            // CLEAR DISPLAYS SMOOTHLY
-            clearDisplays() {
-                this.alertsBuffer = [];
-                this.packetsBuffer = [];
-                
-                // Smooth fade out
-                const fadeOut = (element) => {
-                    element.style.transition = 'opacity 0.3s ease';
-                    element.style.opacity = '0';
-                    setTimeout(() => {
-                        element.innerHTML = '<div class="loading-indicator">Starting smooth capture...</div>';
-                        element.style.opacity = '1';
-                    }, 300);
+                this.isCapturing = false;
+                this.stats = {
+                    packets: 0,
+                    alerts: 0,
+                    packetRate: 0,
+                    threatLevel: 'LOW',
+                    activeNodes: 0,
+                    filterStats: 0
                 };
+                this.alertHistory = [];
+                this.packetHistory = [];
+                this.network = null;
+                this.networkData = { nodes: new vis.DataSet(), edges: new vis.DataSet() };
+            }
+
+            updateStats(newStats) {
+                this.stats = { ...this.stats, ...newStats };
+                this.renderStats();
+            }
+
+            renderStats() {
+                const elements = {
+                    packetRate: document.getElementById('packetRate'),
+                    totalPackets: document.getElementById('totalPackets'),
+                    totalAlerts: document.getElementById('totalAlerts'),
+                    threatLevel: document.getElementById('threatLevel'),
+                    activeNodes: document.getElementById('activeNodes'),
+                    filterStats: document.getElementById('filterStats')
+                };
+
+                // Animate counters
+                this.animateNumber(elements.packetRate, this.stats.packetRate);
+                this.animateNumber(elements.totalPackets, this.stats.packets);
+                this.animateNumber(elements.totalAlerts, this.stats.alerts);
+                elements.threatLevel.textContent = this.stats.threatLevel;
+                this.animateNumber(elements.activeNodes, this.stats.activeNodes);
+                elements.filterStats.textContent = `${this.stats.filterStats}%`;
+
+                // Update header badges
+                document.getElementById('packetThroughput').textContent = `${this.stats.packetRate} PPS`;
                 
-                fadeOut(this.alertsContainer);
-                fadeOut(this.packetsContainer);
+                // Calculate alert rate
+                const recentAlerts = this.alertHistory.filter(a => Date.now() - a.timestamp < 60000).length;
+                document.getElementById('alertRate').textContent = `${recentAlerts}/min`;
             }
-        }
-        
-        // SMOOTH COUNTER ANIMATION CLASS
-        class SmoothCounterAnimator {
-            constructor() {
-                this.counters = new Map();
-            }
-            
-            animateCounter(element, newValue) {
-                const elementId = element.id;
+
+            animateNumber(element, targetValue) {
                 const currentValue = parseInt(element.textContent) || 0;
-                
-                if (currentValue === newValue) return;
-                
-                // Cancel previous animation
-                if (this.counters.has(elementId)) {
-                    clearInterval(this.counters.get(elementId));
-                }
-                
-                // Add update animation class
-                element.classList.add('updating');
-                setTimeout(() => element.classList.remove('updating'), 300);
-                
-                // Smooth number transition
-                const diff = newValue - currentValue;
-                const steps = Math.min(10, Math.abs(diff));
-                const increment = diff / steps;
+                if (currentValue === targetValue) return;
+
+                const duration = 500;
+                const steps = 20;
+                const increment = (targetValue - currentValue) / steps;
                 let current = currentValue;
                 let step = 0;
-                
+
                 const timer = setInterval(() => {
                     current += increment;
                     element.textContent = Math.round(current);
                     step++;
                     
                     if (step >= steps) {
-                        element.textContent = newValue;
+                        element.textContent = targetValue;
                         clearInterval(timer);
-                        this.counters.delete(elementId);
                     }
-                }, 30);
-                
-                this.counters.set(elementId, timer);
+                }, duration / steps);
             }
         }
-        
-        // Initialize Socket.IO with optimizations
-        const socket = io({
-            transports: ['websocket', 'polling'],
-            upgrade: true,
-            rememberUpgrade: true,
-            timeout: 20000
-        });
-        
-        // Initialize smooth UI managers
-        const smoothUI = new SmoothUIManager();
-        const counterAnimator = new SmoothCounterAnimator();
-        
-        // UI Elements
-        const interfaceSelect = document.getElementById('interface-select');
-        const startBtn = document.getElementById('start-btn');
-        const stopBtn = document.getElementById('stop-btn');
-        const statusDot = document.getElementById('status-dot');
-        const statusText = document.getElementById('status-text');
-        const perfBadge = document.getElementById('perf-badge');
-        
-        // Stats elements
-        const packetRate = document.getElementById('packet-rate');
-        const packetCount = document.getElementById('packet-count');
-        const alertCount = document.getElementById('alert-count');
-        const queueSize = document.getElementById('queue-size');
-        const droppedCount = document.getElementById('dropped-count');
-        const processingThreads = document.getElementById('processing-threads');
-        const threatLevel = document.getElementById('threat-level');
-        const sessionTime = document.getElementById('session-time');
-        const alertRate = document.getElementById('alert-rate');
-        const packetThroughput = document.getElementById('packet-throughput');
-        
-        // Content areas
-        const alertNotification = document.getElementById('alert-notification');
-        const notificationMessage = document.getElementById('notification-message');
-        
-        // Performance indicators
-        const alertPerformance = document.getElementById('alert-performance');
-        const packetPerformance = document.getElementById('packet-performance');
-        
-        // Performance tracking
-        let stats = {
-            packets: 0,
-            alerts: 0,
-            dropped: 0,
-            queue: 0,
-            packetsPerSecond: 0,
-            processingThreads: 0,
-            lastUpdate: Date.now()
+
+        // Initialize state
+        const idsState = new IDSState();
+
+        // UI Element references
+        const elements = {
+            interfaceSelect: document.getElementById('interfaceSelect'),
+            startBtn: document.getElementById('startBtn'),
+            stopBtn: document.getElementById('stopBtn'),
+            systemStatus: document.getElementById('systemStatus'),
+            alertsList: document.getElementById('alertsList'),
+            packetsList: document.getElementById('packetsList'),
+            notification: document.getElementById('notification'),
+            notificationMessage: document.getElementById('notificationMessage'),
+            topologyStats: document.getElementById('topologyStats')
         };
-        
-        let isCapturing = false;
-        let sessionStartTime = null;
-        let sessionTimer = null;
-        
-        // Performance monitoring
-        let performanceHistory = [];
-        let alertHistory = [];
-        
-        // Load interfaces on page load
-        window.addEventListener('load', () => {
-            console.log('🌐 Smooth interface loaded');
-            loadInterfaces();
-            updatePerformanceDisplay('Smooth UI initialized - Zero flickering guaranteed');
-        });
-        
-        // Button event listeners
-        startBtn.addEventListener('click', startCapture);
-        stopBtn.addEventListener('click', stopCapture);
-        
-        // SMOOTH SOCKET EVENT HANDLERS
+
+        // Smooth list management
+        class SmoothListManager {
+            constructor(container, maxItems = 50) {
+                this.container = container;
+                this.maxItems = maxItems;
+                this.items = [];
+            }
+
+            addItems(newItems, createItemFn) {
+                if (!newItems || newItems.length === 0) return;
+
+                // Clear empty state
+                this.clearEmptyState();
+
+                // Add new items to beginning
+                newItems.reverse().forEach(item => {
+                    this.items.unshift(item);
+                    const element = createItemFn(item);
+                    element.style.opacity = '0';
+                    element.style.transform = 'translateY(-10px)';
+                    this.container.insertBefore(element, this.container.firstChild);
+
+                    // Animate in
+                    requestAnimationFrame(() => {
+                        element.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                        element.style.opacity = '1';
+                        element.style.transform = 'translateY(0)';
+                    });
+                });
+
+                // Remove excess items
+                while (this.items.length > this.maxItems) {
+                    this.items.pop();
+                    const lastChild = this.container.lastElementChild;
+                    if (lastChild && !lastChild.classList.contains('empty-state')) {
+                        lastChild.remove();
+                    }
+                }
+            }
+
+            clearEmptyState() {
+                const emptyState = this.container.querySelector('.empty-state');
+                if (emptyState) {
+                    emptyState.remove();
+                }
+            }
+
+            clear() {
+                this.items = [];
+                this.container.innerHTML = '';
+            }
+        }
+
+        // Initialize list managers
+        const alertsManager = new SmoothListManager(elements.alertsList, 30);
+        const packetsManager = new SmoothListManager(elements.packetsList, 50);
+
+        // Network topology management
+        class TopologyManager {
+            constructor() {
+                this.network = null;
+                this.networkData = { nodes: new vis.DataSet(), edges: new vis.DataSet() };
+                this.config = {
+                    maxNodes: 15,
+                    updateRate: 2000,
+                    showLabels: true
+                };
+                this.updateInterval = null;
+            }
+
+            initialize() {
+                const container = document.getElementById('networkViz');
+                
+                const options = {
+                    nodes: {
+                        shape: 'dot',
+                        size: 20,
+                        font: {
+                            size: 11,
+                            color: '#374151',
+                            background: 'rgba(255, 255, 255, 0.9)',
+                            strokeWidth: 2,
+                            strokeColor: '#ffffff'
+                        },
+                        borderWidth: 3,
+                        shadow: {
+                            enabled: true,
+                            color: 'rgba(0, 0, 0, 0.1)',
+                            size: 8,
+                            x: 2,
+                            y: 2
+                        }
+                    },
+                    edges: {
+                        width: 2,
+                        color: { inherit: false },
+                        smooth: {
+                            enabled: true,
+                            type: 'continuous',
+                            roundness: 0.3
+                        },
+                        arrows: {
+                            to: {
+                                enabled: true,
+                                scaleFactor: 0.8
+                            }
+                        },
+                        shadow: {
+                            enabled: true,
+                            color: 'rgba(0, 0, 0, 0.1)',
+                            size: 3
+                        }
+                    },
+                    physics: {
+                        enabled: true,
+                        stabilization: { iterations: 200 },
+                        barnesHut: {
+                            gravitationalConstant: -2000,
+                            centralGravity: 0.1,
+                            springLength: 120,
+                            springConstant: 0.04,
+                            damping: 0.09,
+                            avoidOverlap: 0.5
+                        }
+                    },
+                    interaction: {
+                        hover: true,
+                        selectConnectedEdges: false,
+                        tooltipDelay: 300
+                    }
+                };
+
+                this.network = new vis.Network(container, this.networkData, options);
+
+                // Event handlers
+                this.network.on('click', (params) => {
+                    if (params.nodes.length > 0) {
+                        const nodeId = params.nodes[0];
+                        console.log('Node clicked:', nodeId);
+                        this.highlightNode(nodeId);
+                    }
+                });
+
+                // Start periodic updates
+                this.startUpdates();
+            }
+
+            updateVisualization(data) {
+                if (!data) return;
+
+                // Update nodes
+                if (data.nodes) {
+                    const visNodes = data.nodes.slice(0, this.config.maxNodes).map(node => {
+                        const size = Math.max(15, Math.min(40, 15 + (node.packet_count / 20)));
+                        let color = '#10b981'; // Green for normal
+                        let borderColor = '#059669';
+                        
+                        if (node.is_threat) {
+                            color = '#ef4444'; // Red for threats
+                            borderColor = '#dc2626';
+                        } else if (node.packet_count > 100) {
+                            color = '#f59e0b'; // Orange for high activity
+                            borderColor = '#d97706';
+                        }
+
+                        return {
+                            id: node.id,
+                            label: this.config.showLabels ? node.id : '',
+                            color: {
+                                background: color,
+                                border: borderColor
+                            },
+                            size: size,
+                            title: `IP: ${node.id}\nPackets: ${node.packet_count}\nConnections: ${node.connections}\nStatus: ${node.is_threat ? 'THREAT' : 'Normal'}`,
+                            font: {
+                                color: node.is_threat ? '#dc2626' : '#374151'
+                            }
+                        };
+                    });
+
+                    this.networkData.nodes.clear();
+                    this.networkData.nodes.add(visNodes);
+                }
+
+                // Update edges
+                if (data.edges) {
+                    const visEdges = data.edges.map(edge => {
+                        const width = Math.max(2, Math.min(8, edge.packet_count / 10));
+                        let color = '#cbd5e1'; // Light gray for low traffic
+                        
+                        if (edge.packet_count > 100) {
+                            color = '#ef4444'; // Red for high traffic
+                        } else if (edge.packet_count > 30) {
+                            color = '#3b82f6'; // Blue for medium traffic
+                        }
+
+                        return {
+                            id: edge.id,
+                            from: edge.from,
+                            to: edge.to,
+                            width: width,
+                            color: {
+                                color: color,
+                                opacity: 0.8
+                            },
+                            title: `${edge.from} → ${edge.to}\nPackets: ${edge.packet_count}`,
+                            shadow: {
+                                enabled: true,
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        };
+                    });
+
+                    this.networkData.edges.clear();
+                    this.networkData.edges.add(visEdges);
+                }
+
+                // Update stats
+                if (data.stats) {
+                    idsState.updateStats({
+                        activeNodes: data.nodes ? data.nodes.length : 0
+                    });
+                    elements.topologyStats.textContent = `${data.nodes ? data.nodes.length : 0} nodes`;
+                }
+            }
+
+            highlightNode(nodeId) {
+                const connectedNodes = this.network.getConnectedNodes(nodeId);
+                const connectedEdges = this.network.getConnectedEdges(nodeId);
+                
+                this.network.selectNodes([nodeId, ...connectedNodes]);
+                this.network.selectEdges(connectedEdges);
+            }
+
+            startUpdates() {
+                this.updateInterval = setInterval(() => {
+                    this.loadTopologyData();
+                }, this.config.updateRate);
+                
+                // Initial load
+                this.loadTopologyData();
+            }
+
+            stopUpdates() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                    this.updateInterval = null;
+                }
+            }
+
+            async loadTopologyData() {
+                try {
+                    const response = await fetch('/api/topology/data');
+                    const data = await response.json();
+                    this.updateVisualization(data);
+                } catch (error) {
+                    console.error('Error loading topology data:', error);
+                }
+            }
+        }
+
+        // Initialize topology manager
+        const topologyManager = new TopologyManager();
+
+        // Socket event handlers
         socket.on('connected', (data) => {
-            console.log('✅ Connected to smooth IDS server:', data.message);
-            updatePerformanceDisplay(`Connected: ${data.environment} mode - Smooth UI active`);
+            console.log('✅ Connected to IDS server:', data.message);
+            updateSystemStatus('active', 'Connected - Ready to monitor');
+            
+            if (data.config && data.config.smart_filtering) {
+                console.log('🛡️ Smart filtering enabled');
+            }
         });
-        
-        // SMOOTH BATCHED UPDATES
+
         socket.on('packet_batch', (packets) => {
             if (packets && packets.length > 0) {
-                smoothUI.addPacketsSmooth(packets);
-                updatePacketPerformance();
+                packetsManager.addItems(packets, createPacketElement);
             }
         });
-        
+
         socket.on('alert_batch', (alerts) => {
             if (alerts && alerts.length > 0) {
-                console.log(`🚨 Smooth rendering ${alerts.length} alerts`);
-                smoothUI.addAlertsSmooth(alerts);
+                alertsManager.addItems(alerts, createAlertElement);
                 
-                // Show notification for first alert in batch
-                showAlertNotification(alerts[0]);
-                
-                // Update threat level and performance indicators
-                updateThreatLevel(alerts.length);
-                updateAlertPerformance();
-                
-                // Track alert history
-                alertHistory.push({
-                    timestamp: Date.now(),
-                    count: alerts.length
+                // Add to alert history
+                alerts.forEach(alert => {
+                    idsState.alertHistory.push({
+                        timestamp: Date.now(),
+                        severity: alert.severity,
+                        alert: alert
+                    });
                 });
+
+                // Show notification for first alert
+                showNotification(alerts[0]);
                 
-                // Keep only recent history
-                const cutoff = Date.now() - 60000;
-                alertHistory = alertHistory.filter(entry => entry.timestamp > cutoff);
+                // Update threat level
+                updateThreatLevel();
             }
         });
-        
-        socket.on('stats_update', (newStats) => {
-            updateStatsSmooth(newStats);
+
+        socket.on('stats_update', (stats) => {
+            updateStats(stats);
         });
-        
+
         socket.on('capture_error', (data) => {
             console.error('❌ Capture error:', data.error);
-            alert('Capture Error: ' + data.error);
+            showErrorNotification('Capture Error', data.error);
             stopCapture();
         });
-        
-        // SMOOTH STATS UPDATE
-        function updateStatsSmooth(newStats) {
-            // Update counters with smooth animations
-            counterAnimator.animateCounter(packetCount, newStats.packets || 0);
-            counterAnimator.animateCounter(alertCount, newStats.alerts || 0);
-            counterAnimator.animateCounter(droppedCount, newStats.dropped || 0);
-            counterAnimator.animateCounter(queueSize, newStats.queue_size || 0);
-            counterAnimator.animateCounter(processingThreads, newStats.processing_threads || 0);
-            
-            // Update packet rate with special formatting
-            const pps = newStats.packets_per_second || 0;
-            packetRate.textContent = pps;
-            packetThroughput.textContent = `${pps} PPS`;
-            
-            // Update performance badge based on packet rate
-            updatePerformanceBadge(pps);
-            
-            // Calculate alert rate
-            const alertsInLastMinute = alertHistory.reduce((sum, entry) => sum + entry.count, 0);
-            alertRate.textContent = `${alertsInLastMinute}/min`;
-            
-            // Update stats
-            stats = {
+
+        // UI Functions
+        function updateSystemStatus(status, message) {
+            const statusBadge = elements.systemStatus;
+            statusBadge.className = `status-badge ${status}`;
+            statusBadge.querySelector('span').textContent = message;
+        }
+
+        function updateStats(newStats) {
+            const stats = {
                 packets: newStats.packets || 0,
                 alerts: newStats.alerts || 0,
-                dropped: newStats.dropped || 0,
-                queue: newStats.queue_size || 0,
-                packetsPerSecond: pps,
-                processingThreads: newStats.processing_threads || 0,
-                lastUpdate: Date.now()
+                packetRate: newStats.packets_per_second || 0,
+                activeNodes: idsState.stats.activeNodes
             };
-            
-            // Update performance display
-            updatePerformanceDisplay();
-            
-            // Track performance history
-            performanceHistory.push({
-                timestamp: Date.now(),
-                pps: pps
-            });
-            
-            // Keep only recent history
-            const cutoff = Date.now() - 30000;
-            performanceHistory = performanceHistory.filter(entry => entry.timestamp > cutoff);
-        }
-        
-        function updatePerformanceBadge(pps) {
-            if (pps >= 500) {
-                perfBadge.textContent = `${pps} PPS - SMOOTH`;
-                perfBadge.style.background = 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)';
-            } else if (pps >= 100) {
-                perfBadge.textContent = `${pps} PPS - OPTIMIZED`;
-                perfBadge.style.background = 'linear-gradient(135deg, #ed8936 0%, #dd6b20 100%)';
-            } else if (pps >= 10) {
-                perfBadge.textContent = `${pps} PPS - STABLE`;
-                perfBadge.style.background = 'linear-gradient(135deg, #ecc94b 0%, #d69e2e 100%)';
-            } else {
-                perfBadge.textContent = `${pps} PPS - READY`;
-                perfBadge.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+
+            // Calculate filter stats
+            if (newStats.filter_stats) {
+                stats.filterStats = newStats.filter_stats.blocked_percentage || 0;
             }
+
+            idsState.updateStats(stats);
         }
-        
-        function updatePacketPerformance() {
-            const avgPps = performanceHistory.length > 0 
-                ? performanceHistory.reduce((sum, entry) => sum + entry.pps, 0) / performanceHistory.length 
-                : 0;
-            
-            if (avgPps >= 400) {
-                packetPerformance.textContent = 'SMOOTH';
-                packetPerformance.className = 'performance-indicator high';
-            } else if (avgPps >= 100) {
-                packetPerformance.textContent = 'STABLE';
-                packetPerformance.className = 'performance-indicator medium';
-            } else {
-                packetPerformance.textContent = 'READY';
-                packetPerformance.className = 'performance-indicator low';
-            }
-        }
-        
-        function updateAlertPerformance() {
-            const recentAlerts = alertHistory.reduce((sum, entry) => sum + entry.count, 0);
-            
-            if (recentAlerts >= 10) {
-                alertPerformance.textContent = 'HIGH ACTIVITY';
-                alertPerformance.className = 'performance-indicator high';
-            } else if (recentAlerts >= 3) {
-                alertPerformance.textContent = 'DETECTING';
-                alertPerformance.className = 'performance-indicator medium';
-            } else {
-                alertPerformance.textContent = 'MONITORING';
-                alertPerformance.className = 'performance-indicator low';
-            }
-        }
-        
-        function updatePerformanceDisplay(message = null) {
-            if (message) {
-                console.log(`📊 Performance: ${message}`);
-                return;
-            }
-            
-            const queueStatus = stats.queue > 1000 ? '⚠️ High' : stats.queue > 500 ? '📊 Medium' : '✅ Normal';
-            const dropRate = stats.packets > 0 ? ((stats.dropped / stats.packets) * 100).toFixed(1) : '0.0';
-            const avgPps = performanceHistory.length > 0 
-                ? (performanceHistory.reduce((sum, entry) => sum + entry.pps, 0) / performanceHistory.length).toFixed(0)
-                : '0';
-            
-            console.log(`📊 Smooth Performance - Queue: ${queueStatus} | Drop: ${dropRate}% | Avg: ${avgPps} PPS | Threads: ${stats.processingThreads}`);
-        }
-        
-        function updateThreatLevel(newAlerts) {
-            const totalAlerts = stats.alerts;
-            const recentAlerts = alertHistory.reduce((sum, entry) => sum + entry.count, 0);
+
+        function updateThreatLevel() {
+            const recentAlerts = idsState.alertHistory.filter(a => Date.now() - a.timestamp < 300000); // 5 minutes
+            const highSeverityAlerts = recentAlerts.filter(a => a.severity === 'High').length;
             
             let level = 'LOW';
-            let className = 'stat-number';
-            
-            if (totalAlerts >= 100 || recentAlerts >= 20 || newAlerts >= 10) {
+            if (highSeverityAlerts >= 5 || recentAlerts.length >= 20) {
                 level = 'CRITICAL';
-                className = 'stat-number alert-stat';
-            } else if (totalAlerts >= 50 || recentAlerts >= 10 || newAlerts >= 5) {
+            } else if (highSeverityAlerts >= 2 || recentAlerts.length >= 10) {
                 level = 'HIGH';
-                className = 'stat-number alert-stat';
-            } else if (totalAlerts >= 20 || recentAlerts >= 5 || newAlerts >= 2) {
+            } else if (highSeverityAlerts >= 1 || recentAlerts.length >= 5) {
                 level = 'MEDIUM';
-                className = 'stat-number';
             }
-            
-            threatLevel.textContent = level;
-            threatLevel.className = className;
+
+            idsState.updateStats({ threatLevel: level });
         }
-        
-        function showAlertNotification(alert) {
-            notificationMessage.textContent = `${alert.rule_name}: ${alert.src_ip} → ${alert.dst_ip}`;
-            alertNotification.classList.add('show');
+
+        function createAlertElement(alert) {
+            const element = document.createElement('div');
+            element.className = 'list-item alert-item';
             
-            // Enhanced sound for attack detection
+            const severityClass = `severity-${alert.severity.toLowerCase()}`;
+            
+            element.innerHTML = `
+                <div class="item-header">
+                    <h4 class="item-title">${alert.rule_name}</h4>
+                    <div class="severity-badge ${severityClass}">${alert.severity}</div>
+                </div>
+                <div class="item-time">${alert.timestamp}</div>
+                <div class="item-details">${alert.description}</div>
+                <div class="item-network">
+                    ${alert.src_ip}${alert.src_port ? ':' + alert.src_port : ''} → 
+                    ${alert.dst_ip}${alert.dst_port ? ':' + alert.dst_port : ''} 
+                    [${alert.protocol}] #${alert.packet_id}
+                </div>
+            `;
+            
+            return element;
+        }
+
+        function createPacketElement(packet) {
+            const element = document.createElement('div');
+            element.className = 'list-item packet-item';
+            
+            const protocolClass = getProtocolClass(packet.protocol);
+            
+            element.innerHTML = `
+                <div class="item-header">
+                    <h4 class="item-title">#${packet.id} <span class="protocol-badge ${protocolClass}">${packet.protocol}</span></h4>
+                    <div class="item-time">${packet.timestamp}</div>
+                </div>
+                <div class="item-details">
+                    <strong>From:</strong> ${packet.src_ip}${packet.src_port ? ':' + packet.src_port : ''} →
+                    <strong>To:</strong> ${packet.dst_ip}${packet.dst_port ? ':' + packet.dst_port : ''}
+                </div>
+                <div class="item-network">
+                    Size: ${packet.size} bytes${packet.flags ? ' | Flags: ' + packet.flags : ''}
+                </div>
+            `;
+            
+            return element;
+        }
+
+        function getProtocolClass(protocol) {
+            const protocolMap = {
+                'TCP': 'protocol-tcp',
+                'UDP': 'protocol-udp',
+                'ICMP': 'protocol-icmp'
+            };
+            return protocolMap[protocol] || 'protocol-other';
+        }
+
+        function showNotification(alert) {
+            elements.notificationMessage.textContent = 
+                `${alert.rule_name}: ${alert.src_ip} → ${alert.dst_ip}`;
+            
+            elements.notification.classList.add('show', 'alert');
+            
+            // Play sound
+            playNotificationSound();
+            
+            setTimeout(() => {
+                elements.notification.classList.remove('show');
+            }, 5000);
+        }
+
+        function showErrorNotification(title, message) {
+            elements.notification.querySelector('.notification-title').textContent = title;
+            elements.notificationMessage.textContent = message;
+            elements.notification.classList.add('show');
+            
+            setTimeout(() => {
+                elements.notification.classList.remove('show');
+            }, 5000);
+        }
+
+        function playNotificationSound() {
             try {
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const oscillator = audioContext.createOscillator();
@@ -1232,126 +1384,156 @@
                 oscillator.connect(gainNode);
                 gainNode.connect(audioContext.destination);
                 
-                oscillator.frequency.value = 1000;
+                oscillator.frequency.value = 800;
                 oscillator.type = 'sine';
                 
-                gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
                 
                 oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.4);
+                oscillator.stop(audioContext.currentTime + 0.3);
             } catch (error) {
                 console.log('Audio not available');
             }
-            
-            setTimeout(() => {
-                alertNotification.classList.remove('show');
-            }, 4000);
         }
-        
+
+        // Interface management
         async function loadInterfaces() {
             try {
                 const response = await fetch('/interfaces');
                 const interfaces = await response.json();
                 
-                interfaceSelect.innerHTML = '<option value="">Select an interface...</option>';
+                elements.interfaceSelect.innerHTML = '<option value="">Select interface...</option>';
                 
                 interfaces.forEach(iface => {
                     const option = document.createElement('option');
                     option.value = iface.ip;
                     option.textContent = `${iface.name} (${iface.ip})`;
-                    interfaceSelect.appendChild(option);
+                    elements.interfaceSelect.appendChild(option);
                 });
                 
-                console.log(`✅ Loaded ${interfaces.length} interfaces for smooth capture`);
-                
+                console.log(`✅ Loaded ${interfaces.length} interfaces`);
             } catch (error) {
                 console.error('❌ Failed to load interfaces:', error);
-                interfaceSelect.innerHTML = '<option value="">Failed to load interfaces</option>';
+                elements.interfaceSelect.innerHTML = '<option value="">Failed to load interfaces</option>';
             }
         }
-        
+
+        // Capture controls
         async function startCapture() {
-            const interfaceIp = interfaceSelect.value;
+            const interfaceIp = elements.interfaceSelect.value;
             if (!interfaceIp) {
-                alert('Please select a network interface');
+                showErrorNotification('Interface Required', 'Please select a network interface');
                 return;
             }
-            
+
             try {
                 const response = await fetch('/start_capture', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ interface_ip: interfaceIp })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
-                    isCapturing = true;
-                    startBtn.disabled = true;
-                    stopBtn.disabled = false;
-                    interfaceSelect.disabled = true;
-                    statusDot.classList.add('active');
-                    statusText.textContent = 'Smooth IDS monitoring active - Zero flickering UI';
+                    idsState.isCapturing = true;
+                    elements.startBtn.disabled = true;
+                    elements.stopBtn.disabled = false;
+                    elements.interfaceSelect.disabled = true;
                     
-                    // Start session timer
-                    sessionStartTime = new Date();
-                    sessionTimer = setInterval(updateSessionTime, 1000);
+                    updateSystemStatus('active', 'Monitoring Active - Enhanced IDS Running');
                     
-                    // Clear displays smoothly
-                    smoothUI.clearDisplays();
+                    // Clear previous data
+                    alertsManager.clear();
+                    packetsManager.clear();
                     
-                    console.log('✅ Smooth capture started - UI optimized for performance');
-                    updatePerformanceDisplay('Smooth monitoring started - Advanced UI rendering active');
+                    // Start topology updates
+                    topologyManager.startUpdates();
+                    
+                    console.log('✅ Enhanced IDS monitoring started');
                 } else {
-                    alert('Failed to start capture: ' + data.message);
+                    showErrorNotification('Start Failed', data.message);
                 }
             } catch (error) {
-                console.error('❌ Error starting capture:', error);
-                alert('Error starting capture: ' + error.message);
+                console.error('❌ Start error:', error);
+                showErrorNotification('Connection Error', error.message);
             }
         }
-        
+
         async function stopCapture() {
             try {
                 const response = await fetch('/stop_capture', { method: 'POST' });
                 const data = await response.json();
+
+                idsState.isCapturing = false;
+                elements.startBtn.disabled = false;
+                elements.stopBtn.disabled = true;
+                elements.interfaceSelect.disabled = false;
                 
-                isCapturing = false;
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-                interfaceSelect.disabled = false;
-                statusDot.classList.remove('active');
-                statusText.textContent = 'Smooth IDS stopped';
+                updateSystemStatus('inactive', 'Monitoring Stopped');
                 
-                if (sessionTimer) {
-                    clearInterval(sessionTimer);
-                    sessionTimer = null;
-                }
+                // Stop topology updates
+                topologyManager.stopUpdates();
                 
-                console.log('✅ Smooth capture stopped');
-                updatePerformanceDisplay('Smooth monitoring stopped');
+                console.log('✅ Monitoring stopped');
             } catch (error) {
-                console.error('❌ Error stopping capture:', error);
+                console.error('❌ Stop error:', error);
             }
         }
-        
-        function updateSessionTime() {
-            if (!sessionStartTime) return;
-            
-            const now = new Date();
-            const diff = Math.floor((now - sessionStartTime) / 1000);
-            const hours = Math.floor(diff / 3600).toString().padStart(2, '0');
-            const minutes = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-            const seconds = (diff % 60).toString().padStart(2, '0');
-            
-            sessionTime.textContent = `Session: ${hours}:${minutes}:${seconds}`;
+
+        // Topology controls
+        function cleanupTopology() {
+            fetch('/api/topology/cleanup', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('🧹 Topology cleanup:', data);
+                    topologyManager.loadTopologyData();
+                })
+                .catch(error => console.error('Cleanup error:', error));
         }
-        
-        console.log('✅ Smooth High-Performance JavaScript initialization complete');
-        console.log('🎯 UI Optimizations: Virtual scrolling, request animation frame, smooth transitions');
-        console.log('🚀 Zero flickering guarantee - Advanced rendering pipeline active');
+
+        // Event listeners
+        elements.startBtn.addEventListener('click', startCapture);
+        elements.stopBtn.addEventListener('click', stopCapture);
+
+        // Topology controls
+        document.getElementById('maxNodes').addEventListener('change', (e) => {
+            topologyManager.config.maxNodes = parseInt(e.target.value);
+            topologyManager.loadTopologyData();
+        });
+
+        document.getElementById('updateRate').addEventListener('change', (e) => {
+            topologyManager.config.updateRate = parseInt(e.target.value);
+            topologyManager.stopUpdates();
+            topologyManager.startUpdates();
+        });
+
+        document.getElementById('showLabels').addEventListener('change', (e) => {
+            topologyManager.config.showLabels = e.target.checked;
+            topologyManager.loadTopologyData();
+        });
+
+        // Initialize on load
+        window.addEventListener('load', async () => {
+            console.log('🌐 Enhanced IDS Dashboard initialized');
+            
+            // Load interfaces
+            await loadInterfaces();
+            
+            // Initialize topology
+            topologyManager.initialize();
+            
+            // Set initial state
+            updateSystemStatus('inactive', 'System Ready - Select interface to start');
+            
+            console.log('✅ Dashboard ready');
+        });
+
+        // Cleanup on unload
+        window.addEventListener('beforeunload', () => {
+            topologyManager.stopUpdates();
+        });
     </script>
 </body>
 </html>

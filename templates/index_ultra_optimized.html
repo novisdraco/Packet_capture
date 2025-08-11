@@ -1,0 +1,604 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra-Optimized IDS - Zero False Positives</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #0a0a0a; 
+            color: #00ff41; 
+            overflow-x: hidden; 
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1a1a, #2d2d2d);
+            padding: 20px;
+            border-bottom: 2px solid #00ff41;
+            box-shadow: 0 2px 20px rgba(0, 255, 65, 0.3);
+        }
+        .header h1 {
+            font-size: 2.5em;
+            text-align: center;
+            text-shadow: 0 0 20px #00ff41;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        @keyframes glow {
+            from { text-shadow: 0 0 20px #00ff41; }
+            to { text-shadow: 0 0 30px #00ff41, 0 0 40px #00ff41; }
+        }
+        .status-bar {
+            background: #1a1a1a;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 1s infinite;
+        }
+        .status-dot.active { background: #00ff41; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+            height: calc(100vh - 160px);
+        }
+        .panel {
+            background: linear-gradient(135deg, #1a1a1a, #2a2a2a);
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        .panel h3 {
+            color: #00ff41;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .btn-start {
+            background: linear-gradient(135deg, #00ff41, #00cc33);
+            color: black;
+        }
+        .btn-stop {
+            background: linear-gradient(135deg, #ff4444, #cc3333);
+            color: white;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 255, 65, 0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #444;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #00ff41;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 5px;
+        }
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #333;
+            border-radius: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+        th {
+            background: #2a2a2a;
+            color: #00ff41;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background: #2a2a2a;
+        }
+        .alert-high { background: rgba(255, 68, 68, 0.2); }
+        .alert-medium { background: rgba(255, 165, 0, 0.2); }
+        .alert-low { background: rgba(255, 255, 0, 0.2); }
+        .confidence-bar {
+            width: 100%;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ffaa00, #00ff41);
+            transition: width 0.3s;
+        }
+        #interfaceSelect {
+            padding: 10px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #00ff41;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        .performance-chart {
+            height: 300px;
+            margin-top: 20px;
+        }
+        .filter-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .filter-stat {
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .learning-panel {
+            background: #1a2a1a;
+            border: 1px solid #00ff41;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .feedback-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .btn-feedback {
+            padding: 5px 15px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        .btn-fp { background: #ff4444; color: white; }
+        .btn-tp { background: #00ff41; color: black; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ Ultra-Optimized IDS - Zero False Positives</h1>
+    </div>
+    
+    <div class="status-bar">
+        <div class="status-indicator">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Disconnected</span>
+        </div>
+        <div class="controls">
+            <select id="interfaceSelect">
+                <option value="">Select Network Interface...</option>
+            </select>
+            <button class="btn btn-start" onclick="startCapture()">🚀 Start IDS</button>
+            <button class="btn btn-stop" onclick="stopCapture()">⏹️ Stop IDS</button>
+            <button class="btn" onclick="window.open('/topology', '_blank')">🌐 Network Map</button>
+        </div>
+        <div>
+            <span>Performance: <span id="performanceTarget">1000+ pps</span></span>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="panel">
+            <h3>📊 Real-Time Statistics</h3>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalPackets">0</div>
+                    <div class="stat-label">Total Packets</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="filteredPackets">0</div>
+                    <div class="stat-label">Filtered (Legitimate)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="analyzedPackets">0</div>
+                    <div class="stat-label">Analyzed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalAlerts">0</div>
+                    <div class="stat-label">Alerts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="packetsPerSecond">0</div>
+                    <div class="stat-label">Packets/Second</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="falsePositiveRate">0%</div>
+                    <div class="stat-label">False Positive Rate</div>
+                </div>
+            </div>
+            
+            <div class="filter-stats">
+                <div class="filter-stat">
+                    <div>Video Conf Filtered</div>
+                    <div id="videoConfFiltered">0</div>
+                </div>
+                <div class="filter-stat">
+                    <div>Cloud Services Filtered</div>
+                    <div id="cloudFiltered">0</div>
+                </div>
+                <div class="filter-stat">
+                    <div>Localhost Filtered</div>
+                    <div id="localhostFiltered">0</div>
+                </div>
+                <div class="filter-stat">
+                    <div>Apps Filtered</div>
+                    <div id="appsFiltered">0</div>
+                </div>
+            </div>
+            
+            <div class="performance-chart">
+                <canvas id="performanceChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h3>🚨 Security Alerts</h3>
+            <div class="learning-panel">
+                <strong>🧠 Learning System Active</strong>
+                <p>Mark alerts as false/true positives to improve detection accuracy</p>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Rule</th>
+                            <th>Source → Destination</th>
+                            <th>Confidence</th>
+                            <th>Feedback</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alertsTable">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h3>📡 Recent Network Traffic</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Source IP</th>
+                            <th>Destination IP</th>
+                            <th>Protocol</th>
+                            <th>Port</th>
+                            <th>Size</th>
+                        </tr>
+                    </thead>
+                    <tbody id="packetsTable">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h3>🔧 Detection Rules Status</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rule Name</th>
+                            <th>Status</th>
+                            <th>Triggers</th>
+                            <th>False Positives</th>
+                            <th>Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rulesTable">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        let performanceChart;
+        let chartData = {
+            labels: [],
+            datasets: [{
+                label: 'Packets/Second',
+                data: [],
+                borderColor: '#00ff41',
+                backgroundColor: 'rgba(0, 255, 65, 0.1)',
+                tension: 0.4
+            }, {
+                label: 'Alerts/Minute',
+                data: [],
+                borderColor: '#ff4444',
+                backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                tension: 0.4
+            }]
+        };
+        
+        // Initialize performance chart
+        function initChart() {
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            performanceChart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#00ff41' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#888' },
+                            grid: { color: '#333' }
+                        },
+                        y: {
+                            ticks: { color: '#888' },
+                            grid: { color: '#333' }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Socket event handlers
+        socket.on('connected', function(data) {
+            document.getElementById('statusDot').classList.add('active');
+            document.getElementById('statusText').textContent = 'Connected - ' + data.environment;
+            loadInterfaces();
+            loadRules();
+        });
+        
+        socket.on('stats_update', function(stats) {
+            document.getElementById('totalPackets').textContent = stats.packets.toLocaleString();
+            document.getElementById('filteredPackets').textContent = stats.filtered.toLocaleString();
+            document.getElementById('analyzedPackets').textContent = stats.analyzed.toLocaleString();
+            document.getElementById('totalAlerts').textContent = stats.alerts.toLocaleString();
+            document.getElementById('packetsPerSecond').textContent = stats.packets_per_second;
+            
+            if (stats.ids_metrics && stats.ids_metrics.false_positive_rate !== undefined) {
+                document.getElementById('falsePositiveRate').textContent = 
+                    (stats.ids_metrics.false_positive_rate * 100).toFixed(1) + '%';
+            }
+            
+            // Update filter stats
+            if (stats.filter_stats) {
+                document.getElementById('videoConfFiltered').textContent = stats.filter_stats.video_conf_filtered || 0;
+                document.getElementById('cloudFiltered').textContent = stats.filter_stats.cloud_service_filtered || 0;
+                document.getElementById('localhostFiltered').textContent = stats.filter_stats.localhost_filtered || 0;
+                document.getElementById('appsFiltered').textContent = stats.filter_stats.legitimate_app_filtered || 0;
+            }
+            
+            // Update chart
+            updateChart(stats.packets_per_second, stats.alerts);
+        });
+        
+        socket.on('alert_batch', function(alerts) {
+            const table = document.getElementById('alertsTable');
+            alerts.forEach(alert => {
+                const row = table.insertRow(0);
+                row.className = `alert-${alert.severity.toLowerCase()}`;
+                
+                const confidencePercent = (alert.confidence * 100).toFixed(1);
+                
+                row.innerHTML = `
+                    <td>${alert.timestamp}</td>
+                    <td>${alert.rule_name}</td>
+                    <td>${alert.src_ip} → ${alert.dst_ip}:${alert.dst_port || 'N/A'}</td>
+                    <td>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${confidencePercent}%"></div>
+                        </div>
+                        ${confidencePercent}%
+                    </td>
+                    <td>
+                        <div class="feedback-buttons">
+                            <button class="btn-feedback btn-fp" onclick="markFalsePositive(${alert.id})">FP</button>
+                            <button class="btn-feedback btn-tp" onclick="markTruePositive(${alert.id})">TP</button>
+                        </div>
+                    </td>
+                `;
+            });
+            
+            // Keep only last 50 alerts
+            while (table.rows.length > 50) {
+                table.deleteRow(-1);
+            }
+        });
+        
+        socket.on('packet_batch', function(packets) {
+            const table = document.getElementById('packetsTable');
+            packets.forEach(packet => {
+                const row = table.insertRow(0);
+                row.innerHTML = `
+                    <td>${packet.timestamp}</td>
+                    <td>${packet.src_ip}</td>
+                    <td>${packet.dst_ip}</td>
+                    <td>${packet.protocol}</td>
+                    <td>${packet.dst_port || 'N/A'}</td>
+                    <td>${packet.size} bytes</td>
+                `;
+            });
+            
+            // Keep only last 30 packets
+            while (table.rows.length > 30) {
+                table.deleteRow(-1);
+            }
+        });
+        
+        // Functions
+        function updateChart(pps, alerts) {
+            const now = new Date().toLocaleTimeString();
+            chartData.labels.push(now);
+            chartData.datasets[0].data.push(pps);
+            chartData.datasets[1].data.push(alerts);
+            
+            // Keep only last 20 data points
+            if (chartData.labels.length > 20) {
+                chartData.labels.shift();
+                chartData.datasets.forEach(dataset => dataset.data.shift());
+            }
+            
+            if (performanceChart) {
+                performanceChart.update('none');
+            }
+        }
+        
+        function loadInterfaces() {
+            fetch('/interfaces')
+                .then(response => response.json())
+                .then(interfaces => {
+                    const select = document.getElementById('interfaceSelect');
+                    interfaces.forEach(iface => {
+                        const option = document.createElement('option');
+                        option.value = iface.ip;
+                        option.textContent = `${iface.name} (${iface.ip})`;
+                        select.appendChild(option);
+                    });
+                });
+        }
+        
+        function loadRules() {
+            fetch('/rules')
+                .then(response => response.json())
+                .then(rules => {
+                    const table = document.getElementById('rulesTable');
+                    table.innerHTML = '';
+                    rules.forEach(rule => {
+                        const row = table.insertRow();
+                        row.innerHTML = `
+                            <td>${rule.name}</td>
+                            <td>${rule.enabled ? '✅ Enabled' : '❌ Disabled'}</td>
+                            <td>${rule.trigger_count}</td>
+                            <td>${rule.false_positive_count || 0}</td>
+                            <td>${(rule.confidence_threshold * 100).toFixed(0)}%</td>
+                        `;
+                    });
+                });
+        }
+        
+        function startCapture() {
+            const interface_ip = document.getElementById('interfaceSelect').value;
+            if (!interface_ip) {
+                alert('Please select a network interface');
+                return;
+            }
+            
+            fetch('/start_capture', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ interface_ip })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('statusText').textContent = 'Capturing - ' + data.environment;
+                } else {
+                    alert('Failed to start: ' + data.message);
+                }
+            });
+        }
+        
+        function stopCapture() {
+            fetch('/stop_capture', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('statusText').textContent = 'Stopped';
+                        document.getElementById('statusDot').classList.remove('active');
+                    }
+                });
+        }
+        
+        function markFalsePositive(alertId) {
+            fetch('/api/feedback/false_positive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alert_id: alertId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Marked as false positive:', alertId);
+                }
+            });
+        }
+        
+        function markTruePositive(alertId) {
+            fetch('/api/feedback/true_positive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alert_id: alertId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Marked as true positive:', alertId);
+                }
+            });
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initChart();
+        });
+    </script>
+</body>
+</html>
