@@ -8,691 +8,172 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        /* Base */
+        * { box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            background: #1f3b74; /* flat bg for performance */
             color: #333;
             overflow-x: hidden;
         }
-        
+
         /* Header */
         .header {
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(20px);
+            background: #ffffff;
             padding: 1rem 2rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+            position: sticky; top: 0; z-index: 100;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
         }
-        
         .header-content {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: between;
-            align-items: center;
-            gap: 2rem;
+            max-width: 1400px; margin: 0 auto;
+            display: flex; align-items: center; gap: 2rem;
         }
-        
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        
+        .logo { display: flex; align-items: center; gap: .75rem; }
         .logo-icon {
-            width: 40px;
-            height: 40px;
+            width: 40px; height: 40px; border-radius: 12px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 1.25rem;
-            font-weight: 700;
+            display: grid; place-items: center; color: #fff; font-weight: 700;
         }
-        
-        .logo-text {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #2d3748;
-            margin: 0;
-        }
-        
+        .logo-text { font-size: 1.5rem; font-weight: 700; color: #2d3748; margin: 0; }
+
         .status-badge {
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
             margin-left: auto;
+            padding: .5rem 1rem; border-radius: 999px; font-size: .875rem; font-weight: 600;
+            display: inline-flex; align-items: center; gap: .5rem;
+            background: #f3f4f6; color: #6b7280;
         }
-        
-        .status-badge.active {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
-        }
-        
-        .status-badge.inactive {
-            background: #f3f4f6;
-            color: #6b7280;
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: currentColor;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        /* Main Container */
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        
+        .status-badge.active { background: #10b981; color: #fff; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+        /* Container */
+        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+
         /* Control Panel */
         .control-panel {
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: #fff; border-radius: 16px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.06); border: 1px solid #f1f5f9;
         }
-        
         .control-grid {
-            display: grid;
-            grid-template-columns: 1fr auto auto;
-            gap: 2rem;
-            align-items: center;
+            display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center;
         }
-        
-        .interface-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-        
-        .interface-group label {
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: #374151;
-        }
-        
+        .interface-group { display: flex; flex-direction: column; gap: .5rem; }
+        .interface-group label { font-size: .875rem; font-weight: 600; color: #374151; }
         .interface-select {
-            padding: 0.75rem 1rem;
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            font-size: 1rem;
-            background: white;
-            transition: all 0.2s ease;
-            min-width: 250px;
-        }
-        
-        .interface-select:focus {
-            border-color: #667eea;
+            padding: .6rem .9rem; border: 1px solid #e5e7eb; border-radius: 10px; min-width: 240px;
             outline: none;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
-        
-        .btn-group {
-            display: flex;
-            gap: 1rem;
-        }
-        
+        .btn-group { display: flex; gap: .75rem; }
         .btn {
-            padding: 0.875rem 1.5rem;
-            border: none;
-            border-radius: 12px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            position: relative;
-            overflow: hidden;
+            padding: .7rem 1.2rem; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;
         }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-        }
-        
-        .btn-primary:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn-danger {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-            color: white;
-            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
-        }
-        
-        .btn-danger:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
-        }
-        
-        .btn:disabled {
-            background: #d1d5db;
-            color: #9ca3af;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        
-        /* Stats Dashboard */
+        .btn:disabled { background: #d1d5db; color: #9ca3af; cursor: not-allowed; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; }
+        .btn-danger  { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #fff; }
+
+        /* Stats */
         .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+            gap: 1rem; margin-bottom: 1.25rem;
         }
-        
         .stat-card {
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 2rem;
-            text-align: center;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
+            background: #fff; border-radius: 16px; padding: 1.25rem; text-align: center;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.05); border: 1px solid #f1f5f9; position: relative;
         }
-        
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        }
-        
-        .stat-card.alert-card::before {
-            background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
-        }
-        
-        .stat-card.performance-card::before {
-            background: linear-gradient(90deg, #10b981 0%, #059669 100%);
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.12);
-        }
-        
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: 800;
-            color: #1f2937;
-            margin-bottom: 0.5rem;
-            display: block;
-            line-height: 1;
-        }
-        
-        .stat-number.alert {
-            color: #ef4444;
-        }
-        
-        .stat-number.performance {
-            color: #10b981;
-        }
-        
-        .stat-label {
-            color: #6b7280;
-            font-size: 0.875rem;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        
-        /* Main Content Grid */
-        .main-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            margin-bottom: 2rem;
-        }
-        
+        .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); }
+        .alert-card::before { background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%); }
+        .performance-card::before { background: linear-gradient(90deg, #10b981 0%, #059669 100%); }
+        .stat-number { font-size: 2.1rem; font-weight: 800; color: #1f2937; line-height: 1; }
+        .stat-number.alert { color: #ef4444; }
+        .stat-number.performance { color: #10b981; }
+        .stat-label { color: #6b7280; font-size: .8rem; font-weight: 600; margin-top: .4rem; }
+
+        /* Main grid */
+        .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
         .content-card {
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            display: flex;
-            flex-direction: column;
-            height: 500px;
+            background: #fff; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.05); border: 1px solid #f1f5f9; display: flex; flex-direction: column; height: 480px;
         }
-        
         .card-header {
-            padding: 1.5rem 2rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: between;
-            gap: 1rem;
-            position: relative;
+            padding: 1rem 1.25rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff; display: flex; align-items: center; gap: .75rem;
         }
-        
-        .card-header.alerts {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        }
-        
-        .card-title {
-            font-size: 1.125rem;
-            font-weight: 600;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        
-        .card-badge {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 0.25rem 0.75rem;
-            border-radius: 50px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: auto;
-        }
-        
-        .card-content {
-            flex: 1;
-            overflow: hidden;
-            position: relative;
-        }
-        
-        .content-list {
-            height: 100%;
-            overflow-y: auto;
-            padding: 0;
-        }
-        
-        .content-list::-webkit-scrollbar {
-            width: 6px;
-        }
-        
-        .content-list::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        
-        .content-list::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 3px;
-        }
-        
-        .content-list::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-        
-        .list-item {
-            padding: 1.5rem 2rem;
-            border-bottom: 1px solid #f1f5f9;
-            transition: all 0.2s ease;
-        }
-        
-        .list-item:hover {
-            background: #f8fafc;
-        }
-        
-        .list-item:last-child {
-            border-bottom: none;
-        }
-        
-        .alert-item {
-            border-left: 4px solid #ef4444;
-            background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, transparent 50%);
-        }
-        
-        .packet-item {
-            border-left: 4px solid #10b981;
-        }
-        
-        .item-header {
-            display: flex;
-            justify-content: between;
-            align-items: flex-start;
-            margin-bottom: 0.75rem;
-            gap: 1rem;
-        }
-        
-        .item-title {
-            font-weight: 600;
-            color: #1f2937;
-            margin: 0;
-            font-size: 1rem;
-        }
-        
-        .item-time {
-            color: #6b7280;
-            font-size: 0.875rem;
-            white-space: nowrap;
-        }
-        
-        .item-details {
-            color: #4b5563;
-            font-size: 0.875rem;
-            line-height: 1.5;
-            margin-bottom: 0.75rem;
-        }
-        
-        .item-network {
-            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
-            font-size: 0.8rem;
-            color: #6b7280;
-            background: #f8fafc;
-            padding: 0.75rem;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .severity-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 50px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .severity-low {
-            background: #dcfce7;
-            color: #166534;
-        }
-        
-        .severity-medium {
-            background: #fef3c7;
-            color: #92400e;
-        }
-        
-        .severity-high {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-        
-        .protocol-badge {
-            padding: 0.25rem 0.5rem;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .protocol-tcp {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-        
-        .protocol-udp {
-            background: #dcfce7;
-            color: #166534;
-        }
-        
-        .protocol-icmp {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-        
-        .protocol-other {
-            background: #f3f4f6;
-            color: #374151;
-        }
-        
-        /* Network Topology */
-        .topology-card {
-            grid-column: 1 / -1;
-            height: 600px;
-        }
-        
+        .card-header.alerts { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+        .card-title { font-size: 1.05rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: .5rem; }
+        .card-badge { margin-left: auto; background: rgba(255,255,255,.2); padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700; }
+        .card-content { flex: 1; position: relative; overflow: hidden; }
+        .content-list { height: 100%; overflow-y: auto; padding: 0; }
+        .content-list::-webkit-scrollbar { width: 6px; }
+        .content-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .list-item { padding: 1rem 1.25rem; border-bottom: 1px solid #f1f5f9; }
+        .alert-item { border-left: 4px solid #ef4444; background: linear-gradient(90deg, rgba(239,68,68,.05) 0%, transparent 40%); }
+        .packet-item { border-left: 4px solid #10b981; }
+        .item-header { display: flex; align-items: flex-start; gap: 1rem; }
+        .item-title { font-weight: 700; color: #1f2937; margin: 0; font-size: .98rem; }
+        .item-time { margin-left: auto; color: #6b7280; font-size: .85rem; white-space: nowrap; }
+        .item-details { color: #4b5563; font-size: .88rem; line-height: 1.4; margin: .4rem 0; }
+        .item-network { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: .8rem; color: #475569; background: #f8fafc; padding: .6rem .7rem; border-radius: 8px; border: 1px solid #e5e7eb; }
+
+        .severity-badge { padding: .15rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 800; }
+        .severity-low    { background: #dcfce7; color: #166534; }
+        .severity-medium { background: #fef3c7; color: #92400e; }
+        .severity-high   { background: #fee2e2; color: #991b1b; }
+
+        .protocol-badge { padding: .15rem .4rem; border-radius: 6px; font-size: .72rem; font-weight: 800; }
+        .protocol-tcp { background: #dbeafe; color: #1e40af; }
+        .protocol-udp { background: #dcfce7; color: #166534; }
+        .protocol-icmp { background: #fee2e2; color: #991b1b; }
+        .protocol-other { background: #f3f4f6; color: #374151; }
+
+        /* Topology */
+        .topology-card { grid-column: 1 / -1; height: 560px; }
+        #networkViz { width: 100%; height: 470px; background: #fafbfc; }
         .topology-controls {
-            padding: 1rem 2rem;
-            background: #f8fafc;
-            border-top: 1px solid #e5e7eb;
-            display: flex;
-            gap: 2rem;
-            align-items: center;
-            flex-wrap: wrap;
+            padding: .8rem 1.25rem; background: #f8fafc; border-top: 1px solid #e5e7eb;
+            display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
         }
-        
-        .control-group {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+        .control-group { display: flex; align-items: center; gap: .5rem; }
+        .control-group select, .control-group input {
+            padding: .45rem .6rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: .875rem;
         }
-        
-        .control-group label {
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: #374151;
-        }
-        
-        .control-group select,
-        .control-group input {
-            padding: 0.5rem;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            font-size: 0.875rem;
-        }
-        
         .control-group button {
-            padding: 0.5rem 1rem;
-            background: #f59e0b;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.875rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            padding: .45rem .8rem; background: #f59e0b; color: #fff; border: none; border-radius: 6px; font-size: .875rem; cursor: pointer;
         }
-        
-        .control-group button:hover {
-            background: #d97706;
-        }
-        
-        #networkViz {
-            width: 100%;
-            height: 500px;
-            background: #fafbfc;
-        }
-        
-        /* Empty States */
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: #6b7280;
-            text-align: center;
-            padding: 2rem;
-        }
-        
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            opacity: 0.5;
-        }
-        
-        .empty-state h3 {
-            margin: 0 0 0.5rem 0;
-            font-size: 1.125rem;
-            font-weight: 600;
-        }
-        
-        .empty-state p {
-            margin: 0;
-            font-size: 0.875rem;
-        }
-        
-        /* Notifications */
+
+        /* Empty state */
+        .empty-state { height: 100%; display: grid; place-items: center; text-align: center; color: #6b7280; padding: 1rem; }
+        .empty-state-icon { font-size: 2.2rem; opacity: .55; margin-bottom: .4rem; }
+
+        /* Notification */
         .notification {
-            position: fixed;
-            top: 2rem;
-            right: 2rem;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-            border: 1px solid #e5e7eb;
-            padding: 1.5rem;
-            max-width: 400px;
-            z-index: 1000;
-            transform: translateX(450px);
-            transition: transform 0.3s ease;
+            position: fixed; top: 2rem; right: 2rem; background: #fff; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,.12); border: 1px solid #e5e7eb;
+            padding: 1rem 1.1rem; max-width: 380px; z-index: 1000;
+            transform: translateX(450px); transition: transform .25s ease-out;
         }
-        
-        .notification.show {
-            transform: translateX(0);
-        }
-        
-        .notification.alert {
-            border-left: 4px solid #ef4444;
-            background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, white 20%);
-        }
-        
-        .notification-header {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 0.75rem;
-        }
-        
-        .notification-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
-            background: #ef4444;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.125rem;
-        }
-        
-        .notification-title {
-            font-weight: 600;
-            color: #1f2937;
-            margin: 0;
-        }
-        
-        .notification-message {
-            color: #4b5563;
-            font-size: 0.875rem;
-            line-height: 1.5;
-            margin: 0;
-        }
-        
-        /* Responsive Design */
+        .notification.show { transform: translateX(0); }
+        .notification.alert { border-left: 4px solid #ef4444; background: linear-gradient(90deg, rgba(239,68,68,.05) 0%, #fff 20%); }
+        .notification-header { display: flex; align-items: center; gap: .6rem; margin-bottom: .4rem; }
+        .notification-icon { width: 36px; height: 36px; border-radius: 8px; background: #ef4444; color: #fff; display: grid; place-items: center; }
+        .notification-title { margin: 0; font-weight: 800; color: #111827; }
+        .notification-message { margin: 0; color: #374151; font-size: .9rem; line-height: 1.35; }
+
+        /* Responsive */
         @media (max-width: 1200px) {
-            .main-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .control-grid {
-                grid-template-columns: 1fr;
-                gap: 1.5rem;
-            }
-            
-            .btn-group {
-                justify-content: stretch;
-            }
-            
-            .btn-group .btn {
-                flex: 1;
-            }
+            .main-grid { grid-template-columns: 1fr; }
+            .control-grid { grid-template-columns: 1fr; }
+            .btn-group .btn { width: 100%; }
         }
-        
         @media (max-width: 768px) {
-            .container {
-                padding: 1rem;
-            }
-            
-            .header-content {
-                padding: 0 1rem;
-                flex-direction: column;
-                gap: 1rem;
-                text-align: center;
-            }
-            
-            .status-badge {
-                margin-left: 0;
-            }
-            
-            .control-panel {
-                padding: 1.5rem;
-            }
-            
-            .stat-card {
-                padding: 1.5rem;
-            }
-            
-            .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 1rem;
-            }
-            
-            .topology-controls {
-                flex-direction: column;
-                gap: 1rem;
-                align-items: stretch;
-            }
-            
-            .control-group {
-                justify-content: space-between;
-            }
-        }
-        
-        /* Loading animations */
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        /* Smooth transitions */
-        * {
-            transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            .container { padding: 1rem; }
+            .header-content { flex-direction: column; text-align: center; gap: .75rem; }
+            .status-badge { margin-left: 0; }
         }
     </style>
 </head>
 <body>
-    <!-- Header -->
     <header class="header">
         <div class="header-content">
             <div class="logo">
@@ -700,13 +181,11 @@
                 <h1 class="logo-text">Enhanced IDS</h1>
             </div>
             <div class="status-badge" id="systemStatus">
-                <div class="status-dot"></div>
-                <span>System Ready</span>
+                <div class="status-dot"></div><span>System Ready</span>
             </div>
         </div>
     </header>
 
-    <!-- Main Container -->
     <div class="container">
         <!-- Control Panel -->
         <div class="control-panel">
@@ -718,17 +197,13 @@
                     </select>
                 </div>
                 <div class="btn-group">
-                    <button id="startBtn" class="btn btn-primary">
-                        🚀 Start Monitoring
-                    </button>
-                    <button id="stopBtn" class="btn btn-danger" disabled>
-                        ⏹️ Stop Monitoring
-                    </button>
+                    <button id="startBtn" class="btn btn-primary">🚀 Start Monitoring</button>
+                    <button id="stopBtn"  class="btn btn-danger" disabled>⏹️ Stop Monitoring</button>
                 </div>
             </div>
         </div>
 
-        <!-- Stats Dashboard -->
+        <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card performance-card">
                 <span class="stat-number performance" id="packetRate">0</span>
@@ -756,53 +231,49 @@
             </div>
         </div>
 
-        <!-- Main Content Grid -->
+        <!-- Lists -->
         <div class="main-grid">
-            <!-- Security Alerts -->
             <div class="content-card">
                 <div class="card-header alerts">
-                    <h2 class="card-title">
-                        🚨 Security Alerts
-                    </h2>
+                    <h2 class="card-title">🚨 Security Alerts</h2>
                     <div class="card-badge" id="alertRate">0/min</div>
                 </div>
                 <div class="card-content">
                     <div class="content-list" id="alertsList">
                         <div class="empty-state">
                             <div class="empty-state-icon">🛡️</div>
-                            <h3>No Threats Detected</h3>
-                            <p>System is monitoring for security threats</p>
+                            <div>
+                                <h3>No Threats Detected</h3>
+                                <p>System is monitoring for security threats</p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Network Traffic -->
             <div class="content-card">
                 <div class="card-header">
-                    <h2 class="card-title">
-                        📊 Network Traffic
-                    </h2>
+                    <h2 class="card-title">📊 Network Traffic</h2>
                     <div class="card-badge" id="packetThroughput">0 PPS</div>
                 </div>
                 <div class="card-content">
                     <div class="content-list" id="packetsList">
                         <div class="empty-state">
                             <div class="empty-state-icon">📡</div>
-                            <h3>No Traffic</h3>
-                            <p>Start monitoring to see network activity</p>
+                            <div>
+                                <h3>No Traffic</h3>
+                                <p>Start monitoring to see network activity</p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Network Topology -->
+        <!-- Topology -->
         <div class="content-card topology-card">
             <div class="card-header">
-                <h2 class="card-title">
-                    🌐 Network Topology
-                </h2>
+                <h2 class="card-title">🌐 Network Topology</h2>
                 <div class="card-badge" id="topologyStats">0 nodes</div>
             </div>
             <div class="card-content">
@@ -826,9 +297,7 @@
                     </select>
                 </div>
                 <div class="control-group">
-                    <label>
-                        <input type="checkbox" id="showLabels" checked> Show Labels
-                    </label>
+                    <label><input type="checkbox" id="showLabels" checked> Show Labels</label>
                 </div>
                 <div class="control-group">
                     <button onclick="cleanupTopology()">🧹 Cleanup</button>
@@ -837,52 +306,35 @@
         </div>
     </div>
 
-    <!-- Notification System -->
+    <!-- Notification -->
     <div class="notification" id="notification">
         <div class="notification-header">
             <div class="notification-icon">⚠️</div>
             <h4 class="notification-title">Security Alert</h4>
         </div>
-        <p class="notification-message" id="notificationMessage">
-            New threat detected on your network
-        </p>
+        <p class="notification-message" id="notificationMessage">New threat detected on your network</p>
     </div>
 
     <script>
-        console.log('🚀 Enhanced IDS Dashboard Loading...');
+        console.log('🚀 Enhanced IDS Dashboard (optimized)');
 
-        // Initialize Socket.IO with optimizations
-        const socket = io({
-            transports: ['websocket'],
-            upgrade: true,
-            rememberUpgrade: true
-        });
+        const socket = io({ transports: ['websocket'], upgrade: true, rememberUpgrade: true });
 
-        // Global state management
+        /* -------- State -------- */
         class IDSState {
             constructor() {
                 this.isCapturing = false;
-                this.stats = {
-                    packets: 0,
-                    alerts: 0,
-                    packetRate: 0,
-                    threatLevel: 'LOW',
-                    activeNodes: 0,
-                    filterStats: 0
-                };
+                this.stats = { packets: 0, alerts: 0, packetRate: 0, threatLevel: 'LOW', activeNodes: 0, filterStats: 0 };
                 this.alertHistory = [];
-                this.packetHistory = [];
                 this.network = null;
                 this.networkData = { nodes: new vis.DataSet(), edges: new vis.DataSet() };
             }
-
             updateStats(newStats) {
                 this.stats = { ...this.stats, ...newStats };
                 this.renderStats();
             }
-
             renderStats() {
-                const elements = {
+                const els = {
                     packetRate: document.getElementById('packetRate'),
                     totalPackets: document.getElementById('totalPackets'),
                     totalAlerts: document.getElementById('totalAlerts'),
@@ -890,50 +342,20 @@
                     activeNodes: document.getElementById('activeNodes'),
                     filterStats: document.getElementById('filterStats')
                 };
-
-                // Animate counters
-                this.animateNumber(elements.packetRate, this.stats.packetRate);
-                this.animateNumber(elements.totalPackets, this.stats.packets);
-                this.animateNumber(elements.totalAlerts, this.stats.alerts);
-                elements.threatLevel.textContent = this.stats.threatLevel;
-                this.animateNumber(elements.activeNodes, this.stats.activeNodes);
-                elements.filterStats.textContent = `${this.stats.filterStats}%`;
-
-                // Update header badges
+                animateNumber(els.packetRate, this.stats.packetRate);
+                animateNumber(els.totalPackets, this.stats.packets);
+                animateNumber(els.totalAlerts, this.stats.alerts);
+                els.threatLevel.textContent = this.stats.threatLevel;
+                animateNumber(els.activeNodes, this.stats.activeNodes);
+                els.filterStats.textContent = `${this.stats.filterStats}%`;
                 document.getElementById('packetThroughput').textContent = `${this.stats.packetRate} PPS`;
-                
-                // Calculate alert rate
-                const recentAlerts = this.alertHistory.filter(a => Date.now() - a.timestamp < 60000).length;
-                document.getElementById('alertRate').textContent = `${recentAlerts}/min`;
-            }
-
-            animateNumber(element, targetValue) {
-                const currentValue = parseInt(element.textContent) || 0;
-                if (currentValue === targetValue) return;
-
-                const duration = 500;
-                const steps = 20;
-                const increment = (targetValue - currentValue) / steps;
-                let current = currentValue;
-                let step = 0;
-
-                const timer = setInterval(() => {
-                    current += increment;
-                    element.textContent = Math.round(current);
-                    step++;
-                    
-                    if (step >= steps) {
-                        element.textContent = targetValue;
-                        clearInterval(timer);
-                    }
-                }, duration / steps);
+                const recent = this.alertHistory.filter(a => Date.now() - a.timestamp < 60000).length;
+                document.getElementById('alertRate').textContent = `${recent}/min`;
             }
         }
-
-        // Initialize state
         const idsState = new IDSState();
 
-        // UI Element references
+        /* -------- UI Elements -------- */
         const elements = {
             interfaceSelect: document.getElementById('interfaceSelect'),
             startBtn: document.getElementById('startBtn'),
@@ -946,310 +368,195 @@
             topologyStats: document.getElementById('topologyStats')
         };
 
-        // Smooth list management
+        /* -------- Small helpers -------- */
+        function animateNumber(el, target) {
+            const current = parseInt(el.textContent) || 0;
+            if (current === target) return;
+            const duration = 250, steps = 12, inc = (target - current) / steps;
+            let val = current, step = 0;
+            const t = setInterval(() => {
+                val += inc; el.textContent = Math.round(val); step++;
+                if (step >= steps) { el.textContent = target; clearInterval(t); }
+            }, duration / steps);
+        }
+        function updateSystemStatus(status, message) {
+            const badge = elements.systemStatus;
+            badge.className = `status-badge ${status}`;
+            badge.querySelector('span').textContent = message;
+        }
+        function getProtocolClass(protocol) {
+            const map = { TCP: 'protocol-tcp', UDP: 'protocol-udp', ICMP: 'protocol-icmp' };
+            return map[protocol] || 'protocol-other';
+        }
+
+        /* -------- List manager (batched DOM) -------- */
         class SmoothListManager {
             constructor(container, maxItems = 50) {
                 this.container = container;
                 this.maxItems = maxItems;
-                this.items = [];
+                this.count = 0;
             }
+            addItems(items, createItemFn) {
+                if (!items || !items.length) return;
+                // remove empty state once
+                const empty = this.container.querySelector('.empty-state');
+                if (empty) empty.remove();
 
-            addItems(newItems, createItemFn) {
-                if (!newItems || newItems.length === 0) return;
+                const frag = document.createDocumentFragment();
+                // iterate from last to first so the first item ends up at the top after single insert
+                for (let i = items.length - 1; i >= 0; i--) {
+                    const el = createItemFn(items[i]);
+                    frag.appendChild(el);
+                    this.count++;
+                }
+                this.container.insertBefore(frag, this.container.firstChild);
 
-                // Clear empty state
-                this.clearEmptyState();
-
-                // Add new items to beginning
-                newItems.reverse().forEach(item => {
-                    this.items.unshift(item);
-                    const element = createItemFn(item);
-                    element.style.opacity = '0';
-                    element.style.transform = 'translateY(-10px)';
-                    this.container.insertBefore(element, this.container.firstChild);
-
-                    // Animate in
-                    requestAnimationFrame(() => {
-                        element.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-                        element.style.opacity = '1';
-                        element.style.transform = 'translateY(0)';
-                    });
-                });
-
-                // Remove excess items
-                while (this.items.length > this.maxItems) {
-                    this.items.pop();
-                    const lastChild = this.container.lastElementChild;
-                    if (lastChild && !lastChild.classList.contains('empty-state')) {
-                        lastChild.remove();
-                    }
+                // trim extras in one pass
+                while (this.count > this.maxItems) {
+                    const last = this.container.lastElementChild;
+                    if (!last) break;
+                    last.remove(); this.count--;
                 }
             }
-
-            clearEmptyState() {
-                const emptyState = this.container.querySelector('.empty-state');
-                if (emptyState) {
-                    emptyState.remove();
-                }
-            }
-
             clear() {
-                this.items = [];
                 this.container.innerHTML = '';
+                this.count = 0;
             }
         }
-
-        // Initialize list managers
-        const alertsManager = new SmoothListManager(elements.alertsList, 30);
+        const alertsManager  = new SmoothListManager(elements.alertsList, 30);
         const packetsManager = new SmoothListManager(elements.packetsList, 50);
 
-        // Network topology management
+        /* -------- Topology (diff updates + light options) -------- */
         class TopologyManager {
             constructor() {
                 this.network = null;
                 this.networkData = { nodes: new vis.DataSet(), edges: new vis.DataSet() };
-                this.config = {
-                    maxNodes: 15,
-                    updateRate: 2000,
-                    showLabels: true
-                };
+                this.config = { maxNodes: 15, updateRate: 2000, showLabels: true };
                 this.updateInterval = null;
+                this.loading = false; // prevent overlapping fetches
             }
-
             initialize() {
                 const container = document.getElementById('networkViz');
-                
                 const options = {
                     nodes: {
-                        shape: 'dot',
-                        size: 20,
-                        font: {
-                            size: 11,
-                            color: '#374151',
-                            background: 'rgba(255, 255, 255, 0.9)',
-                            strokeWidth: 2,
-                            strokeColor: '#ffffff'
-                        },
-                        borderWidth: 3,
-                        shadow: {
-                            enabled: true,
-                            color: 'rgba(0, 0, 0, 0.1)',
-                            size: 8,
-                            x: 2,
-                            y: 2
-                        }
+                        shape: 'dot', size: 18,
+                        borderWidth: 2,
+                        color: { background: '#10b981', border: '#059669' },
+                        font: { size: 11, color: '#111827', strokeWidth: 0 },
+                        shadow: false
                     },
                     edges: {
-                        width: 2,
-                        color: { inherit: false },
-                        smooth: {
-                            enabled: true,
-                            type: 'continuous',
-                            roundness: 0.3
-                        },
-                        arrows: {
-                            to: {
-                                enabled: true,
-                                scaleFactor: 0.8
-                            }
-                        },
-                        shadow: {
-                            enabled: true,
-                            color: 'rgba(0, 0, 0, 0.1)',
-                            size: 3
-                        }
+                        width: 2, color: { inherit: false },
+                        smooth: false,
+                        arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+                        shadow: false
                     },
                     physics: {
                         enabled: true,
-                        stabilization: { iterations: 200 },
-                        barnesHut: {
-                            gravitationalConstant: -2000,
-                            centralGravity: 0.1,
-                            springLength: 120,
-                            springConstant: 0.04,
-                            damping: 0.09,
-                            avoidOverlap: 0.5
-                        }
+                        stabilization: { iterations: 60, updateInterval: 20 },
+                        solver: 'forceAtlas2Based',
+                        forceAtlas2Based: { gravitationalConstant: -36, centralGravity: 0.005, springLength: 120, springConstant: 0.06, damping: 0.4, avoidOverlap: 0.3 }
                     },
-                    interaction: {
-                        hover: true,
-                        selectConnectedEdges: false,
-                        tooltipDelay: 300
-                    }
+                    interaction: { hover: false, selectConnectedEdges: false, tooltipDelay: 200, zoomView: true, dragView: true }
                 };
-
                 this.network = new vis.Network(container, this.networkData, options);
-
-                // Event handlers
-                this.network.on('click', (params) => {
-                    if (params.nodes.length > 0) {
-                        const nodeId = params.nodes[0];
-                        console.log('Node clicked:', nodeId);
-                        this.highlightNode(nodeId);
-                    }
-                });
-
-                // Start periodic updates
                 this.startUpdates();
             }
+            updateVisualization(payload) {
+                if (!payload) return;
+                const incomingNodes = (payload.nodes || []).slice(0, this.config.maxNodes);
+                const incomingEdges = payload.edges || [];
 
-            updateVisualization(data) {
-                if (!data) return;
+                // Build sets for diffing
+                const keepNodeIds = new Set(incomingNodes.map(n => n.id));
+                const keepEdgeIds = new Set(incomingEdges.map(e => e.id));
 
-                // Update nodes
-                if (data.nodes) {
-                    const visNodes = data.nodes.slice(0, this.config.maxNodes).map(node => {
-                        const size = Math.max(15, Math.min(40, 15 + (node.packet_count / 20)));
-                        let color = '#10b981'; // Green for normal
-                        let borderColor = '#059669';
-                        
-                        if (node.is_threat) {
-                            color = '#ef4444'; // Red for threats
-                            borderColor = '#dc2626';
-                        } else if (node.packet_count > 100) {
-                            color = '#f59e0b'; // Orange for high activity
-                            borderColor = '#d97706';
-                        }
+                // Prepare node updates
+                const nodeUpdates = incomingNodes.map(n => {
+                    let background = '#10b981', border = '#059669';
+                    if (n.is_threat) { background = '#ef4444'; border = '#dc2626'; }
+                    else if (n.packet_count > 100) { background = '#f59e0b'; border = '#d97706'; }
+                    const size = Math.max(14, Math.min(36, 14 + (n.packet_count / 20)));
+                    return {
+                        id: n.id,
+                        label: this.config.showLabels ? n.id : '',
+                        size,
+                        color: { background, border },
+                        title: `IP: ${n.id}\nPackets: ${n.packet_count}\nConnections: ${n.connections}\nStatus: ${n.is_threat ? 'THREAT' : 'Normal'}`
+                    };
+                });
 
-                        return {
-                            id: node.id,
-                            label: this.config.showLabels ? node.id : '',
-                            color: {
-                                background: color,
-                                border: borderColor
-                            },
-                            size: size,
-                            title: `IP: ${node.id}\nPackets: ${node.packet_count}\nConnections: ${node.connections}\nStatus: ${node.is_threat ? 'THREAT' : 'Normal'}`,
-                            font: {
-                                color: node.is_threat ? '#dc2626' : '#374151'
-                            }
-                        };
-                    });
+                // Apply node updates & removals
+                this.networkData.nodes.update(nodeUpdates);
+                const existingNodeIds = this.networkData.nodes.getIds();
+                const toRemoveNodes = existingNodeIds.filter(id => !keepNodeIds.has(id));
+                if (toRemoveNodes.length) this.networkData.nodes.remove(toRemoveNodes);
 
-                    this.networkData.nodes.clear();
-                    this.networkData.nodes.add(visNodes);
-                }
+                // Prepare edge updates
+                const edgeUpdates = incomingEdges.map(e => {
+                    const width = Math.max(2, Math.min(8, e.packet_count / 10));
+                    let color = '#cbd5e1';
+                    if (e.packet_count > 100) color = '#ef4444';
+                    else if (e.packet_count > 30) color = '#3b82f6';
+                    return {
+                        id: e.id,
+                        from: e.from, to: e.to, width,
+                        color: { color, opacity: 0.85 },
+                        title: `${e.from} → ${e.to}\nPackets: ${e.packet_count}`
+                    };
+                });
 
-                // Update edges
-                if (data.edges) {
-                    const visEdges = data.edges.map(edge => {
-                        const width = Math.max(2, Math.min(8, edge.packet_count / 10));
-                        let color = '#cbd5e1'; // Light gray for low traffic
-                        
-                        if (edge.packet_count > 100) {
-                            color = '#ef4444'; // Red for high traffic
-                        } else if (edge.packet_count > 30) {
-                            color = '#3b82f6'; // Blue for medium traffic
-                        }
+                // Apply edge updates & removals
+                this.networkData.edges.update(edgeUpdates);
+                const existingEdgeIds = this.networkData.edges.getIds();
+                const toRemoveEdges = existingEdgeIds.filter(id => !keepEdgeIds.has(id));
+                if (toRemoveEdges.length) this.networkData.edges.remove(toRemoveEdges);
 
-                        return {
-                            id: edge.id,
-                            from: edge.from,
-                            to: edge.to,
-                            width: width,
-                            color: {
-                                color: color,
-                                opacity: 0.8
-                            },
-                            title: `${edge.from} → ${edge.to}\nPackets: ${edge.packet_count}`,
-                            shadow: {
-                                enabled: true,
-                                color: 'rgba(0, 0, 0, 0.1)'
-                            }
-                        };
-                    });
-
-                    this.networkData.edges.clear();
-                    this.networkData.edges.add(visEdges);
-                }
-
-                // Update stats
-                if (data.stats) {
-                    idsState.updateStats({
-                        activeNodes: data.nodes ? data.nodes.length : 0
-                    });
-                    elements.topologyStats.textContent = `${data.nodes ? data.nodes.length : 0} nodes`;
-                }
+                // Stats
+                elements.topologyStats.textContent = `${incomingNodes.length} nodes`;
+                idsState.updateStats({ activeNodes: incomingNodes.length });
             }
-
-            highlightNode(nodeId) {
-                const connectedNodes = this.network.getConnectedNodes(nodeId);
-                const connectedEdges = this.network.getConnectedEdges(nodeId);
-                
-                this.network.selectNodes([nodeId, ...connectedNodes]);
-                this.network.selectEdges(connectedEdges);
-            }
-
             startUpdates() {
-                this.updateInterval = setInterval(() => {
-                    this.loadTopologyData();
-                }, this.config.updateRate);
-                
-                // Initial load
+                this.stopUpdates();
+                this.updateInterval = setInterval(() => this.loadTopologyData(), this.config.updateRate);
                 this.loadTopologyData();
             }
-
             stopUpdates() {
-                if (this.updateInterval) {
-                    clearInterval(this.updateInterval);
-                    this.updateInterval = null;
-                }
+                if (this.updateInterval) { clearInterval(this.updateInterval); this.updateInterval = null; }
             }
-
             async loadTopologyData() {
+                if (this.loading) return;
+                this.loading = true;
                 try {
-                    const response = await fetch('/api/topology/data');
-                    const data = await response.json();
+                    const res = await fetch('/api/topology/data', { cache: 'no-store' });
+                    const data = await res.json();
                     this.updateVisualization(data);
-                } catch (error) {
-                    console.error('Error loading topology data:', error);
-                }
+                } catch (e) { console.error('Topology fetch error:', e); }
+                finally { this.loading = false; }
             }
         }
-
-        // Initialize topology manager
         const topologyManager = new TopologyManager();
 
-        // Socket event handlers
+        /* -------- Socket events -------- */
         socket.on('connected', (data) => {
-            console.log('✅ Connected to IDS server:', data.message);
+            console.log('✅ Connected:', data.message);
             updateSystemStatus('active', 'Connected - Ready to monitor');
-            
-            if (data.config && data.config.smart_filtering) {
-                console.log('🛡️ Smart filtering enabled');
-            }
         });
 
         socket.on('packet_batch', (packets) => {
-            if (packets && packets.length > 0) {
-                packetsManager.addItems(packets, createPacketElement);
-            }
+            if (packets?.length) packetsManager.addItems(packets, createPacketElement);
         });
 
         socket.on('alert_batch', (alerts) => {
-            if (alerts && alerts.length > 0) {
-                alertsManager.addItems(alerts, createAlertElement);
-                
-                // Add to alert history
-                alerts.forEach(alert => {
-                    idsState.alertHistory.push({
-                        timestamp: Date.now(),
-                        severity: alert.severity,
-                        alert: alert
-                    });
-                });
-
-                // Show notification for first alert
-                showNotification(alerts[0]);
-                
-                // Update threat level
-                updateThreatLevel();
-            }
+            if (!(alerts && alerts.length)) return;
+            alertsManager.addItems(alerts, createAlertElement);
+            const now = Date.now();
+            for (const a of alerts) idsState.alertHistory.push({ timestamp: now, severity: a.severity, alert: a });
+            showNotification(alerts[0]);
+            updateThreatLevel();
         });
 
-        socket.on('stats_update', (stats) => {
-            updateStats(stats);
-        });
+        socket.on('stats_update', (stats) => updateStats(stats));
 
         socket.on('capture_error', (data) => {
             console.error('❌ Capture error:', data.error);
@@ -1257,283 +564,165 @@
             stopCapture();
         });
 
-        // UI Functions
-        function updateSystemStatus(status, message) {
-            const statusBadge = elements.systemStatus;
-            statusBadge.className = `status-badge ${status}`;
-            statusBadge.querySelector('span').textContent = message;
-        }
-
-        function updateStats(newStats) {
-            const stats = {
-                packets: newStats.packets || 0,
-                alerts: newStats.alerts || 0,
-                packetRate: newStats.packets_per_second || 0,
-                activeNodes: idsState.stats.activeNodes
-            };
-
-            // Calculate filter stats
-            if (newStats.filter_stats) {
-                stats.filterStats = newStats.filter_stats.blocked_percentage || 0;
-            }
-
-            idsState.updateStats(stats);
-        }
-
-        function updateThreatLevel() {
-            const recentAlerts = idsState.alertHistory.filter(a => Date.now() - a.timestamp < 300000); // 5 minutes
-            const highSeverityAlerts = recentAlerts.filter(a => a.severity === 'High').length;
-            
-            let level = 'LOW';
-            if (highSeverityAlerts >= 5 || recentAlerts.length >= 20) {
-                level = 'CRITICAL';
-            } else if (highSeverityAlerts >= 2 || recentAlerts.length >= 10) {
-                level = 'HIGH';
-            } else if (highSeverityAlerts >= 1 || recentAlerts.length >= 5) {
-                level = 'MEDIUM';
-            }
-
-            idsState.updateStats({ threatLevel: level });
-        }
-
+        /* -------- Renderers -------- */
         function createAlertElement(alert) {
-            const element = document.createElement('div');
-            element.className = 'list-item alert-item';
-            
-            const severityClass = `severity-${alert.severity.toLowerCase()}`;
-            
-            element.innerHTML = `
+            const el = document.createElement('div');
+            el.className = 'list-item alert-item';
+            const sevCls = `severity-${alert.severity.toLowerCase()}`;
+            el.innerHTML = `
                 <div class="item-header">
                     <h4 class="item-title">${alert.rule_name}</h4>
-                    <div class="severity-badge ${severityClass}">${alert.severity}</div>
+                    <div class="severity-badge ${sevCls}">${alert.severity}</div>
                 </div>
                 <div class="item-time">${alert.timestamp}</div>
                 <div class="item-details">${alert.description}</div>
                 <div class="item-network">
-                    ${alert.src_ip}${alert.src_port ? ':' + alert.src_port : ''} → 
-                    ${alert.dst_ip}${alert.dst_port ? ':' + alert.dst_port : ''} 
+                    ${alert.src_ip}${alert.src_port ? ':' + alert.src_port : ''} →
+                    ${alert.dst_ip}${alert.dst_port ? ':' + alert.dst_port : ''}
                     [${alert.protocol}] #${alert.packet_id}
-                </div>
-            `;
-            
-            return element;
+                </div>`;
+            return el;
         }
-
         function createPacketElement(packet) {
-            const element = document.createElement('div');
-            element.className = 'list-item packet-item';
-            
-            const protocolClass = getProtocolClass(packet.protocol);
-            
-            element.innerHTML = `
+            const el = document.createElement('div');
+            el.className = 'list-item packet-item';
+            const proto = getProtocolClass(packet.protocol);
+            el.innerHTML = `
                 <div class="item-header">
-                    <h4 class="item-title">#${packet.id} <span class="protocol-badge ${protocolClass}">${packet.protocol}</span></h4>
+                    <h4 class="item-title">#${packet.id} <span class="protocol-badge ${proto}">${packet.protocol}</span></h4>
                     <div class="item-time">${packet.timestamp}</div>
                 </div>
                 <div class="item-details">
                     <strong>From:</strong> ${packet.src_ip}${packet.src_port ? ':' + packet.src_port : ''} →
                     <strong>To:</strong> ${packet.dst_ip}${packet.dst_port ? ':' + packet.dst_port : ''}
                 </div>
-                <div class="item-network">
-                    Size: ${packet.size} bytes${packet.flags ? ' | Flags: ' + packet.flags : ''}
-                </div>
-            `;
-            
-            return element;
+                <div class="item-network">Size: ${packet.size} bytes${packet.flags ? ' | Flags: ' + packet.flags : ''}</div>`;
+            return el;
         }
 
-        function getProtocolClass(protocol) {
-            const protocolMap = {
-                'TCP': 'protocol-tcp',
-                'UDP': 'protocol-udp',
-                'ICMP': 'protocol-icmp'
+        /* -------- Stats & threat level -------- */
+        function updateStats(newStats) {
+            const stats = {
+                packets: newStats.packets || 0,
+                alerts: newStats.alerts || 0,
+                packetRate: newStats.packets_per_second || 0,
+                activeNodes: idsState.stats.activeNodes,
+                filterStats: newStats?.filter_stats?.blocked_percentage || 0
             };
-            return protocolMap[protocol] || 'protocol-other';
+            idsState.updateStats(stats);
+        }
+        function updateThreatLevel() {
+            const windowMs = 5 * 60 * 1000;
+            const recent = idsState.alertHistory.filter(a => Date.now() - a.timestamp < windowMs);
+            const high = recent.filter(a => a.severity === 'High').length;
+            let level = 'LOW';
+            if (high >= 5 || recent.length >= 20) level = 'CRITICAL';
+            else if (high >= 2 || recent.length >= 10) level = 'HIGH';
+            else if (high >= 1 || recent.length >= 5) level = 'MEDIUM';
+            idsState.updateStats({ threatLevel: level });
         }
 
+        /* -------- Notifications -------- */
         function showNotification(alert) {
-            elements.notificationMessage.textContent = 
-                `${alert.rule_name}: ${alert.src_ip} → ${alert.dst_ip}`;
-            
+            elements.notificationMessage.textContent = `${alert.rule_name}: ${alert.src_ip} → ${alert.dst_ip}`;
             elements.notification.classList.add('show', 'alert');
-            
-            // Play sound
             playNotificationSound();
-            
-            setTimeout(() => {
-                elements.notification.classList.remove('show');
-            }, 5000);
+            setTimeout(() => elements.notification.classList.remove('show'), 5000);
         }
-
         function showErrorNotification(title, message) {
             elements.notification.querySelector('.notification-title').textContent = title;
             elements.notificationMessage.textContent = message;
             elements.notification.classList.add('show');
-            
-            setTimeout(() => {
-                elements.notification.classList.remove('show');
-            }, 5000);
+            setTimeout(() => elements.notification.classList.remove('show'), 5000);
         }
-
         function playNotificationSound() {
             try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                oscillator.frequency.value = 800;
-                oscillator.type = 'sine';
-                
-                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-                
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.3);
-            } catch (error) {
-                console.log('Audio not available');
-            }
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.frequency.value = 800; osc.type = 'sine';
+                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+                osc.start(); osc.stop(ctx.currentTime + 0.25);
+            } catch {}
         }
 
-        // Interface management
+        /* -------- Interfaces & capture -------- */
         async function loadInterfaces() {
             try {
-                const response = await fetch('/interfaces');
-                const interfaces = await response.json();
-                
+                const res = await fetch('/interfaces', { cache: 'no-store' });
+                const interfaces = await res.json();
                 elements.interfaceSelect.innerHTML = '<option value="">Select interface...</option>';
-                
                 interfaces.forEach(iface => {
-                    const option = document.createElement('option');
-                    option.value = iface.ip;
-                    option.textContent = `${iface.name} (${iface.ip})`;
-                    elements.interfaceSelect.appendChild(option);
+                    const o = document.createElement('option');
+                    o.value = iface.ip; o.textContent = `${iface.name} (${iface.ip})`;
+                    elements.interfaceSelect.appendChild(o);
                 });
-                
-                console.log(`✅ Loaded ${interfaces.length} interfaces`);
-            } catch (error) {
-                console.error('❌ Failed to load interfaces:', error);
+            } catch (e) {
+                console.error('Interfaces error:', e);
                 elements.interfaceSelect.innerHTML = '<option value="">Failed to load interfaces</option>';
             }
         }
-
-        // Capture controls
         async function startCapture() {
-            const interfaceIp = elements.interfaceSelect.value;
-            if (!interfaceIp) {
-                showErrorNotification('Interface Required', 'Please select a network interface');
-                return;
-            }
-
+            const ip = elements.interfaceSelect.value;
+            if (!ip) { showErrorNotification('Interface Required', 'Please select a network interface'); return; }
             try {
-                const response = await fetch('/start_capture', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ interface_ip: interfaceIp })
+                const res = await fetch('/start_capture', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ interface_ip: ip })
                 });
-
-                const data = await response.json();
-
+                const data = await res.json();
                 if (data.success) {
                     idsState.isCapturing = true;
-                    elements.startBtn.disabled = true;
-                    elements.stopBtn.disabled = false;
-                    elements.interfaceSelect.disabled = true;
-                    
+                    elements.startBtn.disabled = true; elements.stopBtn.disabled = false; elements.interfaceSelect.disabled = true;
                     updateSystemStatus('active', 'Monitoring Active - Enhanced IDS Running');
-                    
-                    // Clear previous data
-                    alertsManager.clear();
-                    packetsManager.clear();
-                    
-                    // Start topology updates
+                    alertsManager.clear(); packetsManager.clear();
                     topologyManager.startUpdates();
-                    
-                    console.log('✅ Enhanced IDS monitoring started');
-                } else {
-                    showErrorNotification('Start Failed', data.message);
-                }
-            } catch (error) {
-                console.error('❌ Start error:', error);
-                showErrorNotification('Connection Error', error.message);
-            }
+                } else showErrorNotification('Start Failed', data.message);
+            } catch (e) { console.error('Start error:', e); showErrorNotification('Connection Error', e.message); }
         }
-
         async function stopCapture() {
             try {
-                const response = await fetch('/stop_capture', { method: 'POST' });
-                const data = await response.json();
-
+                await fetch('/stop_capture', { method: 'POST' });
                 idsState.isCapturing = false;
-                elements.startBtn.disabled = false;
-                elements.stopBtn.disabled = true;
-                elements.interfaceSelect.disabled = false;
-                
+                elements.startBtn.disabled = false; elements.stopBtn.disabled = true; elements.interfaceSelect.disabled = false;
                 updateSystemStatus('inactive', 'Monitoring Stopped');
-                
-                // Stop topology updates
                 topologyManager.stopUpdates();
-                
-                console.log('✅ Monitoring stopped');
-            } catch (error) {
-                console.error('❌ Stop error:', error);
-            }
+            } catch (e) { console.error('Stop error:', e); }
         }
 
-        // Topology controls
+        /* -------- Topology controls -------- */
         function cleanupTopology() {
             fetch('/api/topology/cleanup', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    console.log('🧹 Topology cleanup:', data);
-                    topologyManager.loadTopologyData();
-                })
-                .catch(error => console.error('Cleanup error:', error));
+                .then(r => r.json())
+                .then(() => topologyManager.loadTopologyData())
+                .catch(e => console.error('Cleanup error:', e));
         }
 
-        // Event listeners
+        /* -------- Events -------- */
         elements.startBtn.addEventListener('click', startCapture);
-        elements.stopBtn.addEventListener('click', stopCapture);
-
-        // Topology controls
+        elements.stopBtn .addEventListener('click', stopCapture);
         document.getElementById('maxNodes').addEventListener('change', (e) => {
-            topologyManager.config.maxNodes = parseInt(e.target.value);
+            topologyManager.config.maxNodes = parseInt(e.target.value, 10);
             topologyManager.loadTopologyData();
         });
-
         document.getElementById('updateRate').addEventListener('change', (e) => {
-            topologyManager.config.updateRate = parseInt(e.target.value);
-            topologyManager.stopUpdates();
+            topologyManager.config.updateRate = parseInt(e.target.value, 10);
             topologyManager.startUpdates();
         });
-
         document.getElementById('showLabels').addEventListener('change', (e) => {
             topologyManager.config.showLabels = e.target.checked;
             topologyManager.loadTopologyData();
         });
 
-        // Initialize on load
+        /* -------- Init -------- */
         window.addEventListener('load', async () => {
-            console.log('🌐 Enhanced IDS Dashboard initialized');
-            
-            // Load interfaces
             await loadInterfaces();
-            
-            // Initialize topology
             topologyManager.initialize();
-            
-            // Set initial state
             updateSystemStatus('inactive', 'System Ready - Select interface to start');
-            
-            console.log('✅ Dashboard ready');
+            console.log('✅ Dashboard ready (optimized)');
         });
-
-        // Cleanup on unload
-        window.addEventListener('beforeunload', () => {
-            topologyManager.stopUpdates();
-        });
+        window.addEventListener('beforeunload', () => topologyManager.stopUpdates());
     </script>
 </body>
 </html>
